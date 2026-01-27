@@ -1,0 +1,16 @@
+# 가상환경
+venv/
+.conda/
+anaconda3/
+
+# 파이썬 캐시
+__pycache__/
+*.py[cod]
+
+# VSCode 설정
+.vscode/
+
+# 데이터 및 결과 (용량이 크면 제외 추천)
+data/
+result/
+*.csv
