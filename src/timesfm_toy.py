@@ -57,7 +57,7 @@ def run_timesfm_2p5_etth():
         plt.figure(figsize=(12, 6))
         plt.plot(range(len(context)), context, label="History", color='black', alpha=0.7)
         plt.plot(range(len(context), len(context) + len(actual)), actual, label="Actual", color='blue', alpha=0.6)
-        plt.plot(range(len(context), len(context) + len(prediction)), prediction, label="TimesFM 2.5 Forecast", color='red', linestyle='--')
+        plt.plot(range(len(context), len(context) + len(prediction)), prediction, label="TimesFM 2.5", color='red', linestyle='--')
         plt.title("TimesFM 2.5 Zero-shot Forecast on ETTh1 (OT)")
         plt.legend()
         plt.grid(True, alpha=0.3)

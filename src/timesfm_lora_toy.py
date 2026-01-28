@@ -113,18 +113,18 @@ def run_timesfm_lora_complete_comparison():
 
         # --- [7. 최종 시각화 비교] ---
         plt.figure(figsize=(15, 8))
-        plt.plot(range(max_context), test_context, label="History (Context)", color='gray', alpha=0.5)
-        plt.plot(range(max_context, max_context + max_horizon), test_actual, label="Actual (Future)", color='blue', lw=2.5)
+        plt.plot(range(max_context), test_context, label="History", color='black', alpha=0.7)
+        plt.plot(range(max_context, max_context + max_horizon), test_actual, label="Actual", color='blue', alpha=0.6)
         
         # Zero-shot (초록색 점선)
         plt.plot(range(max_context, max_context + max_horizon), zero_shot_pred, 
-                 label="Pure TimesFM (Zero-shot)", color='green', linestyle='--', lw=4, alpha=0.6)
+                 label="TimesFM", color='red', linestyle='--', linewidth=4)
         
         # LoRA Tuned (빨간색 실선)
         plt.plot(range(max_context, max_context + max_horizon), lora_pred, 
-                 label="TimesFM + LoRA (Fine-tuned)", color='red', linestyle='-', lw=2)
+                 label="TimesFM + LoRA ", color='green', linestyle='-')
         
-        plt.title(f"TimesFM 2.5 vs TimesFM+LoRA Comparison ({data})")
+        plt.title(f"TimesFM 2.5 vs TimesFM + LoRA ({data})")
         plt.legend()
         plt.grid(True, alpha=0.3)
         plt.show()
