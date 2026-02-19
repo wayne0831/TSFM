@@ -31,8 +31,8 @@ RES_PATH  = {}
 
 DATASET = {
     'etth1': {
-        'context': 96, 
-        'horizon': 192,
+        'context': 96,  # 96
+        'horizon': 192, # 192
         'target_col': 'OT'
         }
 }
