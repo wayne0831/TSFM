@@ -2,7 +2,7 @@
 # import libraries
 ###########################################################################################################
 
-from config import * 
+from src.toy.config import * 
 import torch
 import pandas as pd
 import numpy as np

@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from peft import LoraConfig, get_peft_model
 from timesfm import TimesFM_2p5_200M_torch, ForecastConfig
-from config import *
+from src.toy.config import *
 
 def run_timesfm_lora_complete_comparison():
     try:
