@@ -2,9 +2,7 @@
 # import libraries
 ###########################################################################################################
 
-from multiprocessing import util
 import time
-import traceback
 import torch
 import pandas as pd
 import numpy as np
@@ -55,7 +53,7 @@ print(f"Base Model Inference Time: {end_inf_base:.2f}s")
 # run TimesFM + LoRA
 ###########################################################################################################
 
-PATCH_SIZE = 64 # TimesFM 2.5의 고정 패치 크기
+PATCH_SIZE = 64 
 
 lora_config = LoraConfig(
     r=4,
@@ -70,9 +68,14 @@ model.model = get_peft_model(model.model, lora_config)
 model.model.to(device)
 model.model.print_trainable_parameters()
 
-# 모델 내부 토크나이저 설정 동기화
-if hasattr(model.model.get_base_model(), 'tokenizer'):
-    model.model.get_base_model().tokenizer.context_len = ((max_context + PATCH_SIZE - 1) // PATCH_SIZE) * PATCH_SIZE
+# [⭐ 에러 해결의 핵심] 토크나이저 입력 기대치 강제 조정
+base_model = model.model.get_base_model()
+if hasattr(base_model, 'tokenizer'):
+    # 128 에러를 방지하기 위해 입력 피처를 64로 강제 고정
+    base_model.tokenizer.hidden_layer.in_features = PATCH_SIZE
+    # 현재 컨텍스트 길이에 맞춰 내부 설정 업데이트
+    tgt_context = ((max_context + PATCH_SIZE - 1) // PATCH_SIZE) * PATCH_SIZE
+    base_model.tokenizer.context_len = tgt_context
 
 class TimeSeriesDataset(Dataset):
     def __init__(self, data, cl, hl):
@@ -95,7 +98,7 @@ for epoch in range(5):
     for batch_x, batch_y in train_loader:
         batch_x, batch_y = batch_x.to(device), batch_y.to(device)
         
-        # [단계 1] 64 배수 패딩 (예: 144 -> 192)
+        # [단계 1] 64 배수 패딩
         curr_len = batch_x.shape[1]
         tgt_len = ((curr_len + PATCH_SIZE - 1) // PATCH_SIZE) * PATCH_SIZE
         
@@ -109,23 +112,22 @@ for epoch in range(5):
             batch_x_padded = batch_x
             masks = torch.ones_like(batch_x_padded).to(device)
 
-        # [단계 2] ⭐ 핵심 해결책: [Batch, Num_Patches, 64] 구조로 직접 Reshape
-        # 모델의 입구가 64이므로, 마지막 차원을 64로 강제 고정합니다.
+        # [단계 2] 데이터를 [Batch, Num_Patches, 64] 구조로 Reshape
         num_patches = tgt_len // PATCH_SIZE
         batch_x_input = batch_x_padded.view(batch_x.shape[0], num_patches, PATCH_SIZE)
         masks_input = masks.view(batch_x.shape[0], num_patches, PATCH_SIZE)
 
         optimizer.zero_grad()
         
-        # [단계 3] 모델 호출 (3차원 텐서 전달)
+        # [단계 3] 모델 호출
         outputs = model.model(batch_x_input, masks_input)
         
-        # [단계 4] 출력값 정제
+        # [단계 4] 출력 처리
         if isinstance(outputs, tuple): outputs = outputs[0]
-        if outputs.ndim == 4: # [Batch, Patches, Output_per_patch, Quantiles]
-            outputs = outputs.mean(dim=-1) # 분위수 평균
+        if outputs.ndim == 4: # 분위수 차원 평균
+            outputs = outputs.mean(dim=-1) 
         
-        # 전체 시퀀스로 펼친 후 마지막 max_horizon 구간 추출
+        # 전체 시퀀스 펼치기 및 마지막 구간 슬라이싱
         outputs = outputs.reshape(batch_x.shape[0], -1)
         outputs = outputs[:, -max_horizon:]
         
@@ -139,15 +141,15 @@ for epoch in range(5):
 train_time_lora = time.time() - start_train_lora
 print(f"✅ LoRA Training Complete: {train_time_lora:.2f}s")
 
+###########################################################################################################
+# Prediction & Evaluation
+###########################################################################################################
+
 print("🚀 Predicting with LoRA Enhanced Model...")
 model.model.eval()
 start_inf_lora = time.time()
 lora_preds, _ = sliding_window_forecast(model, te_data, max_context, max_horizon)
 end_inf_lora = time.time() - start_inf_lora
-
-###########################################################################################################
-# compare results
-###########################################################################################################
 
 base_metrics = calculate_metrics(base_actuals, base_preds)
 lora_metrics = calculate_metrics(base_actuals, lora_preds)
@@ -160,20 +162,15 @@ for i in range(4):
     print(f"{m_names[i]:<15} | {base_metrics[i]:<15.4f} | {lora_metrics[i]:<15.4f}")
 print("="*60)
 
-print(f"\n⏱️ Time Summary:")
-print(f"- LoRA Training Time: {train_time_lora:.2f}s")
-print(f"- Base Inference Time: {end_inf_base:.2f}s")
-print(f"- LoRA Inference Time: {end_inf_lora:.2f}s")
-
 ###########################################################################################################
-# plot results
+# Visualization
 ###########################################################################################################
 
 plt.figure(figsize=(15, 7))
 plt.plot(base_actuals[:500], label="Actual", color='black', alpha=0.4)
 plt.plot(base_preds[:500], label="Base TimesFM", color='blue', linestyle='--')
 plt.plot(lora_preds[:500], label="LoRA Enhanced", color='red', alpha=0.7)
-plt.title(f"Comparison on {DATA} (First 500 points)")
+plt.title(f"TimesFM 2.5 vs LoRA Enhanced Comparison")
 plt.xlabel("Time Step")
 plt.ylabel(target_col)
 plt.legend()
