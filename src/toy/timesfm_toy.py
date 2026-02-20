@@ -11,9 +11,9 @@ def run_timesfm_full_comparison():
         # 0. 설정 로드
         data_name   = DATA
         path        = DATA_PATH[data_name]
-        max_context = DATASET[data_name]['context']
-        max_horizon = DATASET[data_name]['horizon']
-        target_col  = DATASET[data_name]['target_col']
+        max_context = 96 # DATASET[data_name]['context']
+        max_horizon = 192 # DATASET[data_name]['horizon']
+        target_col  = 'OT'# DATASET[data_name]['target_col']
 
         # 1. 모델 로드
         print(f"🚀 Loading TimesFM 2.5 200M (Version: {MODEL_VER})...")
