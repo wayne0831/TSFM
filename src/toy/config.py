@@ -50,6 +50,42 @@ DATASET = {
 # set hyperparameter configurations
 ###########################################################################################################
 
+TIMESFM_HYPERPARAMS = {
+    'base': {
+        'max_context': 96, 
+        'max_horizon': 192,
+    },
+    'Etth1': {
+        'max_context': 96,
+        'max_horizon': 192,
+    },
+}
+
+LORA_HYPERPARAMS = {
+    'base': {
+        'patch_size': 64,
+        'epoch': 5,
+        'batch_size': 64,
+        'lr': 1e-3,
+        'r': 4,
+        'lora_alpha': 16,
+        'target_modules': ".*stacked_xf.*qkv_proj",
+        'lora_dropout': 0.1,
+        'bias': "none",
+    },
+    'Etth1': {
+        'patch_size': 64,
+        'epoch': 5,
+        'batch_size': 64,
+        'lr': 1e-3,
+        'r': 4,
+        'lora_alpha': 16,
+        'target_modules': ["attn.qkv_proj", "attn.out"],
+        'lora_dropout': 0.1,
+        'bias': "none",
+    },
+}
+
 HYPERPARAMS = {
     'TimesFM': {
         'base': {
@@ -65,14 +101,14 @@ HYPERPARAMS = {
         'base': {
             'r': 4,
             'lora_alpha': 16,
-            'target_modules': ["qkv_proj", "out", "ff0", "ff1"],
+            'target_modules': ["attn.qkv_proj", "attn.out", "ff0", "ff1"],
             'lora_dropout': 0.1,
             'bias': "none",
         },
-        'Esstth1': {
+        'Etth1': {
             'r': 4,
             'lora_alpha': 16,
-            'target_modules': ["qkv_proj", "out", "ff0", "ff1"],
+            'target_modules': ["attn.qkv_proj", "attn.out", "ff0", "ff1"],
             'lora_dropout': 0.1,
             'bias': "none",
         },
@@ -89,9 +125,9 @@ HYPERPARAMS = {
 ###########################################################################################################
 
 PIPELINE = {
-    'TimesFM': True,
-    'LoRA': True,
-    'RL_LoRA': False,
+    'TimesFM':      True,
+    'TimesFM_LoRA': True,
+    'RL_LoRA':      False,
 }
 
 ###########################################################################################################
@@ -103,5 +139,4 @@ if __name__ == "__main__":
     df = pd.read_csv(DATA_PATH[DATA])
 
     print(df.head(), len(df))
-
     #data_values = df[target_col].values.astype(np.float32)
