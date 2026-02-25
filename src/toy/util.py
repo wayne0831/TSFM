@@ -18,62 +18,112 @@ from config import *
 # set user-defined functions
 ###########################################################################################################
 
-def sliding_window_forecast(model_obj, data, context_len, horizon_len):
-    predictions = []
-    actuals = []
-    
-    # i=0부터 시작하여 데이터의 극초반부(과거 데이터가 부족한 시점)도 예측 가능하게 합니다.
-    for i in range(0, len(data) - horizon_len + 1, horizon_len):
-        # 1. 현재 시점(i) 기준으로 과거 데이터(context) 추출
-        start_idx = max(0, i - context_len)
-        context_raw = data[start_idx : i]
-        actual = data[i : i + horizon_len]
-        
-        # 2. 패딩 및 마스크 초기화 (context_len 크기)
-        context = np.zeros(context_len, dtype=np.float32)
-        mask = np.zeros(context_len, dtype=np.float32)
-        
-        # 3. 데이터가 있는 부분만 채우고 마스크 표시 (뒷부분부터 채우는 Pre-padding)
-        if len(context_raw) > 0:
-            context[-len(context_raw):] = context_raw
-            mask[-len(context_raw):] = 1.0
-            
-        # 4. TimesFM 2.5의 3차원 입력 요구사항 대응 [1, seq_len, 1]
-        # 모델의 forecast 메서드가 내부적으로 처리하지 못할 경우를 대비해 차원을 맞춥니다.
-        context_input = context.reshape(1, context_len, 1)
-        mask_input = mask.reshape(1, context_len, 1)
+# define custom Dataset for time-series data
+class TimeSeriesDataset(Dataset):
+    def __init__(self, data, cl, hl):
+        self.data = data
+        self.cl = cl # context length (e.g., 96)
+        self.hl = hl # horizon length (e.g., 192)
 
-        # 5. 모델 예측 호출
-        # TimesFM API 규격에 따라 inputs와 masks를 리스트나 텐서로 전달합니다.
+    def __len__(self):
+        return len(self.data) - self.cl - self.hl
+
+    def __getitem__(self, idx):
+        # slice raw data for context and horizon 
+        x = self.data[idx : idx + self.cl] 
+        y = self.data[idx + self.cl : idx + self.cl + self.hl]
+        
+        # set padding length to the nearest multiple of TSFM_PATCH_SIZE (64)
+        # cl: 96 -> target_cl: 128
+        target_cl = ((self.cl + TSFM_PATCH_SIZE - 1) // TSFM_PATCH_SIZE) * TSFM_PATCH_SIZE
+        
+        # padding for input sequence (context) to match target_cl
+        x_padded = np.zeros(target_cl, dtype=np.float32)
+        x_padded[-len(x):] = x # set actual data at the end (right alignment)
+        
+        # generate mask for padded input (1 for padding, 0 for actual data)
+        mask = np.zeros(target_cl, dtype=np.float32)
+        mask[:target_cl - len(x)] = 1
+
+        return torch.tensor(x_padded), torch.tensor(y), torch.tensor(mask)
+
+# peform sliding window forecasting and collect predictions and actuals
+def sliding_window_forecast(model_obj, data, cl, hl):
+    # Initialize lists to store predictions and ground truth values
+    predictions, actuals = [], []
+    
+    # Identify the device (GPU or CPU) from the model parameters
+    device = next(model_obj.model.parameters()).device 
+
+    # Calculate padding length to ensure compatibility with TSFM_PATCH_SIZE (64)
+    # Example: cl=96 -> target_cl=128
+    target_cl = ((cl + TSFM_PATCH_SIZE - 1) // TSFM_PATCH_SIZE) * TSFM_PATCH_SIZE
+    
+    i = cl 
+    while i < len(data):
+        # Determine the length of the current prediction window (handle end-of-series)
+        remaining_len = min(hl, len(data) - i)
+        
+        # Extract the context (lookback) and the actual future values (ground truth)
+        context_raw = data[i - cl : i]
+        actual = data[i : i + remaining_len]
+        
         try:
-            # 일반적인 forecast API 호출
-            forecast_output, _ = model_obj.forecast(
-                horizon=horizon_len, 
-                inputs=context_input,
-                masks=mask_input
-            )
-            predictions.extend(forecast_output[0])
-        except TypeError:
-            # 만약 forecast 메서드가 masks 인자를 직접 받지 않는 버전이라면
-            # 내부 torch 모델을 직접 호출하여 처리합니다.
-            device = next(model_obj.model.parameters()).device
-            inputs_ts = torch.tensor(context_input).to(device)
-            masks_ts = torch.tensor(mask_input).to(device)
+            # Standard inference path for the TimesFM model
+            forecast_output, _ = model_obj.forecast(inputs=[context_raw], horizon=remaining_len)
+            pred_values = forecast_output[0]
+            
+        except Exception:
+            # Fallback path: Manual inference for LoRA-tuned models
+            # Step 1: Pad the context to meet the model's patch-based input requirements
+            context_padded = np.zeros(target_cl, dtype=np.float32)
+            context_padded[-len(context_raw):] = context_raw # Right-align context
+            
+            # Step 2: Reshape input into [1, Num_Patches, Patch_Size]
+            num_patches = target_cl // TSFM_PATCH_SIZE
+            inputs_ts = torch.tensor(context_padded).view(1, num_patches, TSFM_PATCH_SIZE).to(device)
+            
+            # Step 3: Construct the padding mask (1 for padding, 0 for actual data)
+            # Consistent with the logic used in TimeSeriesDataset
+            mask_np = np.zeros(target_cl, dtype=np.float32)
+            mask_np[:target_cl - len(context_raw)] = 1
+            masks_ts = torch.tensor(mask_np).view(1, num_patches, TSFM_PATCH_SIZE).to(device)
             
             with torch.no_grad():
-                # outputs[0] shape: [batch, horizon, 1]
-                outputs = model_obj.model(inputs=inputs_ts, masks=masks_ts)
-                pred_values = outputs[0][0, :horizon_len, 0].cpu().numpy()
-                predictions.extend(pred_values)
-        
+                # Step 4: Perform forward pass through the LoRA-adapted model
+                outputs = model_obj.model(inputs_ts, masks_ts)
+                
+                # Step 5: Unpack potential tuple/list output structures from the model
+                while isinstance(outputs, (tuple, list)): 
+                    outputs = outputs[0]
+                
+                # Step 6: Extract point forecast (Channel 0) and reshape
+                # Format: [Batch, Num_Patches, Patch_Size, Bins] -> [Total_Seq_Len]
+                all_preds = outputs[0, :, :, 0].reshape(-1)
+                
+                # Step 7: Slice the relevant horizon window from the end of the predictions
+                # Since TSFM predicts the next hl steps relative to the context
+                pred_values = all_preds[-hl : -hl + remaining_len].cpu().numpy()
+
+        # Collect results and advance the window by the horizon length
+        predictions.extend(pred_values)
         actuals.extend(actual)
-        
+        i += hl
+
     return np.array(predictions), np.array(actuals)
 
+# calculate performance metrics
 def calculate_metrics(actual, pred):
-    mae = np.mean(np.abs(actual - pred))
-    mse = np.mean((actual - pred)**2)
+    mae  = np.mean(np.abs(actual - pred))
+    mse  = np.mean((actual - pred)**2)
     rmse = np.sqrt(mse)
-    mape = np.mean(np.abs((actual - pred) / actual)) * 100
+
+    # WAPE (Weighted Absolute Percentage Error)
+    # 전체 실제값의 크기 대비 전체 오차의 합을 측정하여 모델의 전반적인 정확도를 평가
+    wape = (np.sum(np.abs(actual - pred)) / (np.sum(np.abs(actual)) + 1e-8)) * 100
     
-    return mae, mse, rmse, mape
+    # 2sMAPE (Symmetric MAPE)
+    # 분모에 실제값과 예측값의 평균을 사용하여 0~200% 사이의 값을 가지도록 정규화
+    smape = np.mean(np.abs(actual - pred) / ((np.abs(actual) + np.abs(pred)) / 2 + 1e-8)) * 100
+    
+    return mae, mse, rmse, wape, smape

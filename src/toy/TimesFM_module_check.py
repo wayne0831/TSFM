@@ -61,6 +61,7 @@ for name, module in tmfm_base.model.named_modules():
     if isinstance(module, torch.nn.Linear):
         print(name)
 
+print(tmfm_base.model.named_modules())
 
 """
 tokenizer.hidden_layer

@@ -12,15 +12,79 @@ from timesfm import TimesFM_2p5_200M_torch, ForecastConfig
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
-# config.py와 util.py가 같은 경로에 있어야 합니다.
-from util import *
+#from util import *
 from config import *
+
+###########################################################################################################
+# set user-defined functions
+###########################################################################################################
+
+def calculate_metrics(actual, pred):
+    mae = np.mean(np.abs(actual - pred))
+    mse = np.mean((actual - pred)**2)
+    rmse = np.sqrt(mse)
+    # 분모에 1e-8 추가
+    mape = np.mean(np.abs((actual - pred) / (actual + 1e-8))) * 100
+    return mae, mse, rmse, mape
+
+def sliding_window_forecast(model_obj, data, context_len, horizon_len):
+    """
+    1. max_context 지점부터 데이터 끝까지 예측
+    2. TimesFM 64 패치 규격 준수 (Reshape & Padding)
+    3. GPU 연산 처리 (to(device))
+    """
+    predictions = []
+    actuals = []
+    PATCH_SIZE = 64
+    
+    # 모델의 가중치가 있는 장치(GPU)를 자동으로 감지
+    device = next(model_obj.model.parameters()).device
+    tgt_context_len = ((context_len + PATCH_SIZE - 1) // PATCH_SIZE) * PATCH_SIZE
+    
+    # 시작 지점: 과거 데이터가 context_len만큼 쌓인 시점
+    i = context_len 
+    
+    while i < len(data):
+        remaining_len = min(horizon_len, len(data) - i)
+        
+        context_raw = data[i - context_len : i]
+        actual = data[i : i + remaining_len]
+        
+        try:
+            # 원본 API 시도
+            forecast_output, _ = model_obj.forecast(inputs=[context_raw], horizon=remaining_len)
+            pred_values = forecast_output[0]
+        except:
+            # LoRA 모델 등 수동 텐서 주입이 필요한 경우
+            context_padded = np.zeros(tgt_context_len, dtype=np.float32)
+            context_padded[-len(context_raw):] = context_raw
+            
+            num_patches = tgt_context_len // PATCH_SIZE
+            # [중요] 생성된 텐서를 반드시 GPU(device)로 이동
+            inputs_ts = torch.tensor(context_padded).view(1, num_patches, PATCH_SIZE).to(device)
+            masks_ts = torch.ones_like(inputs_ts).to(device)
+            
+            with torch.no_grad():
+                outputs = model_obj.model(inputs_ts, masks_ts)
+                while isinstance(outputs, (tuple, list)): outputs = outputs[0]
+                if outputs.ndim == 4: outputs = outputs.mean(dim=-1)
+                
+                all_preds = outputs.reshape(1, -1)[0]
+                # 모델 출력(horizon_len) 중 필요한 자투리만큼만 슬라이싱
+                pred_values = all_preds[-horizon_len : -horizon_len + remaining_len].cpu().numpy()
+
+        predictions.extend(pred_values)
+        actuals.extend(actual)
+        i += horizon_len
+
+    return np.array(predictions), np.array(actuals)
 
 ###########################################################################################################
 # set configurations
 ###########################################################################################################
 # set device and load data
 device = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"Using device: {device}")
 
 # load raw data
 df_path = DATA_PATH[DATA]
@@ -86,15 +150,16 @@ if PIPELINE['TimesFM']:
     plot_save_path = RES_PATH['plot']['timesfm_base_plot']
     plt.savefig(plot_save_path, dpi=300, bbox_inches='tight')
     print(f"✅ Plot saved to: {plot_save_path}")
-    plt.show()
+    #plt.show()
 
     npy_save_path = RES_PATH['array']['timesfm_base_preds']
     np.save(npy_save_path, base_preds)
     print(f"✅ Array saved to: {npy_save_path}")
 
-    #loaded_preds = np.load(npy_save_path)
-    #print(loaded_preds.shape, loaded_preds)
+    loaded_preds = np.load(npy_save_path)
+    print(loaded_preds.shape, te_data.shape, loaded_preds)
 # end if
+
 
 ###########################################################################################################
 # run TimesFM + LoRA
@@ -132,7 +197,7 @@ criterion = nn.MSELoss()
 print(f"🏋️ Training LoRA with tr_data (Context: {max_context})...")
 start_train_lora = time.time()
 
-for epoch in range(5): 
+for epoch in range(1): 
     print(f"\nEpoch {epoch+1}/20")
     total_loss = 0
     tmfm_base.model.train() # 학습 모드 강제
@@ -225,12 +290,13 @@ print("="*60)
 ###########################################################################################################
 
 plt.figure(figsize=(15, 7))
-plt.plot(base_actuals[:500], label="Actual", color='black', alpha=0.4)
-plt.plot(base_preds[:500], label="Base TimesFM", color='blue', linestyle='--')
-plt.plot(lora_preds[:500], label="LoRA Enhanced", color='red', alpha=0.7)
+plt.plot(base_actuals, label="Actual", color='black', alpha=0.4)
+plt.plot(base_preds, label="Base TimesFM", color='blue', linestyle='--')
+plt.plot(lora_preds, label="LoRA Enhanced", color='red', alpha=0.7)
 plt.title(f"TimesFM 2.5 vs LoRA Enhanced Comparison")
 plt.xlabel("Time Step")
 plt.ylabel(tgt_col)
 plt.legend()
 plt.grid(True, alpha=0.2)
 plt.show()
+

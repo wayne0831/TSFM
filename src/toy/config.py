@@ -10,7 +10,7 @@ import numpy as np
 # set version configurations
 ###########################################################################################################
 
-DATE      = '260220' # date
+DATE      = '260225' # date
 MODEL_VER = 'google/timesfm-2.5-200m-pytorch' # FM model verision
 DATA      = 'Etth1'  # dataset name
 
@@ -21,6 +21,9 @@ DATA      = 'Etth1'  # dataset name
 # data path
 DATA_PATH = {
     'Etth1': 'https://raw.githubusercontent.com/zhouhaoyi/ETDataset/main/ETT-small/ETTh1.csv',
+    'Etth2': 'https://raw.githubusercontent.com/zhouhaoyi/ETDataset/main/ETT-small/ETTh2.csv',
+    'Ettm1': 'https://raw.githubusercontent.com/zhouhaoyi/ETDataset/main/ETT-small/ETTm1.csv',
+    'Ettm2': 'https://raw.githubusercontent.com/zhouhaoyi/ETDataset/main/ETT-small/ETTm2.csv',
 }
 CHK_PATH  = {
     'LoRA': f'./checkpoints/lora_{DATE}_{DATA}',
@@ -44,13 +47,25 @@ DATASET = {
     'Etth1': {
         'target_col': 'OT'
     },
+    'Etth2': {
+        'target_col': 'OT'
+    },
+    'Ettm1': {
+        'target_col': 'OT'
+    },
+    'Ettm2': {
+        'target_col': 'OT'
+    },
 }
 
 ###########################################################################################################
 # set hyperparameter configurations
 ###########################################################################################################
 
-TIMESFM_HYPERPARAMS = {
+TSFM_PATCH_SIZE = 64
+
+TSFM_PARAMS = {
+    'patch_size': 64,
     'base': {
         'max_context': 96, 
         'max_horizon': 192,
@@ -59,66 +74,74 @@ TIMESFM_HYPERPARAMS = {
         'max_context': 96,
         'max_horizon': 192,
     },
+    'Etth2': {
+        'max_context': 96, 
+        'max_horizon': 192,
+    },
+    'Ettm1': {
+        'max_context': 96, 
+        'max_horizon': 192,
+    },
+    'Ettm2': {
+        'max_context': 96, 
+        'max_horizon': 192,
+    },
 }
 
-LORA_HYPERPARAMS = {
+LORA_PARAMS = {
     'base': {
-        'patch_size': 64,
         'epoch': 5,
-        'batch_size': 64,
-        'lr': 1e-3,
+        'batch_size': 32,
+        'lr': 1e-4,
         'r': 4,
-        'lora_alpha': 16,
-        'target_modules': ".*stacked_xf.*qkv_proj",
-        'lora_dropout': 0.1,
+        'alpha': 8,
+        'target_modules': ["qkv_proj", "out", "ff0", "ff1"],
+        'dropout': 0.1,
         'bias': "none",
     },
     'Etth1': {
-        'patch_size': 64,
         'epoch': 5,
-        'batch_size': 64,
-        'lr': 1e-3,
+        'batch_size': 32,
+        'lr': 1e-4,
         'r': 4,
-        'lora_alpha': 16,
-        'target_modules': ["attn.qkv_proj", "attn.out"],
-        'lora_dropout': 0.1,
+        'alpha': 8,
+        'target_modules': ["qkv_proj", "out", "ff0", "ff1"],
+        'dropout': 0.1,
+        'bias': "none",
+    },
+    'Etth2': {
+        'epoch': 5,
+        'batch_size': 32,
+        'lr': 1e-4,
+        'r': 4,
+        'alpha': 8,
+        'target_modules': ["qkv_proj", "out", "ff0", "ff1"],
+        'dropout': 0.1,
+        'bias': "none",
+    },
+    'Ettm1': {
+        'epoch': 5,
+        'batch_size': 32,
+        'lr': 1e-4,
+        'r': 4,
+        'alpha': 8,
+        'target_modules': ["qkv_proj", "out", "ff0", "ff1"],
+        'dropout': 0.1,
+        'bias': "none",
+    },
+    'Ettm2': {
+        'epoch': 5,
+        'batch_size': 32,
+        'lr': 1e-4,
+        'r': 4,
+        'alpha': 8,
+        'target_modules': ["qkv_proj", "out", "ff0", "ff1"],
+        'dropout': 0.1,
         'bias': "none",
     },
 }
 
-HYPERPARAMS = {
-    'TimesFM': {
-        'base': {
-            'max_context': 96,
-            'max_horizon': 192,
-        },
-        'Etth1': {
-            'max_context': 96,
-            'max_horizon': 192,
-        },
-    },
-    'LoRA': {
-        'base': {
-            'r': 4,
-            'lora_alpha': 16,
-            'target_modules': ["attn.qkv_proj", "attn.out", "ff0", "ff1"],
-            'lora_dropout': 0.1,
-            'bias': "none",
-        },
-        'Etth1': {
-            'r': 4,
-            'lora_alpha': 16,
-            'target_modules': ["attn.qkv_proj", "attn.out", "ff0", "ff1"],
-            'lora_dropout': 0.1,
-            'bias': "none",
-        },
-    },
-    'RL_LoRA': {
-        'state':  [],
-        'action': [],
-        'reward': [],
-    }
-}
+
 
 ###########################################################################################################
 # set pipeline
@@ -133,10 +156,3 @@ PIPELINE = {
 ###########################################################################################################
 # set model configurations
 ###########################################################################################################
-
-if __name__ == "__main__":
-    print(f"📊 Loading {DATA} data...")
-    df = pd.read_csv(DATA_PATH[DATA])
-
-    print(df.head(), len(df))
-    #data_values = df[target_col].values.astype(np.float32)
