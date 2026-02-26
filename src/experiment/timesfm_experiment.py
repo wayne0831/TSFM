@@ -123,3 +123,6 @@ def run_timesfm_experiment(device, model, test_input_data, cl, hl):
     tr_data = target[:ft_len] 
     te_data = target[ft_len:] 
     pass
+
+if __name__ == "__main__":
+    pass
