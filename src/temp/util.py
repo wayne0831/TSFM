@@ -116,7 +116,6 @@ def sliding_window_forecast(model_obj, data, cl, hl):
 def calculate_metrics(actual, pred):
     mae  = np.mean(np.abs(actual - pred))
     mse  = np.mean((actual - pred)**2)
-    rmse = np.sqrt(mse)
 
     # WAPE (Weighted Absolute Percentage Error)
     # 전체 실제값의 크기 대비 전체 오차의 합을 측정하여 모델의 전반적인 정확도를 평가
@@ -126,4 +125,4 @@ def calculate_metrics(actual, pred):
     # 분모에 실제값과 예측값의 평균을 사용하여 0~200% 사이의 값을 가지도록 정규화
     smape = np.mean(np.abs(actual - pred) / ((np.abs(actual) + np.abs(pred)) / 2 + 1e-8)) * 100
     
-    return mae, mse, rmse, wape, smape
+    return mae, mse, wape, smape

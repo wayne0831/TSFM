@@ -1,0 +1,99 @@
+###########################################################################################################
+# import libraries
+###########################################################################################################
+
+import sys
+import pandas as pd
+import numpy as np
+from itertools import product
+
+###########################################################################################################
+# set version configurations
+###########################################################################################################
+
+DATA        = 'Etth1'
+TSFM_METHOD = 'TimesFM'
+FT_METHOD   = 'LoRA'
+
+###########################################################################################################
+# set hyperparmeters configurations
+###########################################################################################################
+
+# name: TimesFM_cl[96]_hl[192]_LoRA_fr[0.7],r[4]_a[16]_d[0.1]_tgt[qkv_proj_out_ff0_ff1]_e[5]_bs[32]
+PARAMS = {
+    'TimesFM': {
+        'model_ver': 'TimesFM_2p5_200M_torch',
+        'pathch_size': '64',
+        'cl': '96, 192',
+        'hl': '192, 256',
+    },
+    'LoRA': {
+        'ft_ratio': '0.7',
+        'rank': '4',
+        'alpha': '16',
+        'dropout': '0.1',
+        'target_modules': '["qkv_proj", "out", "ff0", "ff1"]',
+        'batch_size': '32',
+    }
+}
+
+###########################################################################################################
+# set path configurations
+###########################################################################################################
+
+# data path
+DATA_PATH = {
+    'Etth1': 'https://raw.githubusercontent.com/zhouhaoyi/ETDataset/main/ETT-small/ETTh1.csv',
+    'Etth2': 'https://raw.githubusercontent.com/zhouhaoyi/ETDataset/main/ETT-small/ETTh2.csv',
+    'Ettm1': 'https://raw.githubusercontent.com/zhouhaoyi/ETDataset/main/ETT-small/ETTm1.csv',
+    'Ettm2': 'https://raw.githubusercontent.com/zhouhaoyi/ETDataset/main/ETT-small/ETTm2.csv',
+}
+CHK_PATH  = {
+    'LoRA': f'./checkpoints/LoRA/',
+}
+RES_PATH  = {
+    'plot': { # .png
+        'TimesFM': f'./results/plot/TimesFM/',
+        'LoRA': f'./results/plot/LoRA/',
+    },
+    'predictions': { # .npy
+        'TimesFM': f'./results/predictions/TimesFM',
+        'LoRA': f'./results/predictions/LoRA',
+    },
+    'performance': { # .csv
+        'TimesFM': f'./results/performance/TimesFM/',
+        'LoRA': f'./results/performance/LoRA/',
+    },
+}
+
+###########################################################################################################
+# set data configurations
+###########################################################################################################
+
+DATASET = {
+    'Etth1': {
+        'target_col': 'OT'
+    },
+    'Etth2': {
+        'target_col': 'OT'
+    },
+    'Ettm1': {
+        'target_col': 'OT'
+    },
+    'Ettm2': {
+        'target_col': 'OT'
+    },
+}
+
+
+if __name__ == "__main__":
+    CL = PARAMS[TSFM_METHOD]['cl']
+    HL = PARAMS[TSFM_METHOD]['hl']
+
+    # 1. ','를 기준으로 문자열 분리 (리스트 생성)
+    cl_list = [x.strip() for x in CL.split(',')]
+    hl_list = [x.strip() for x in HL.split(',')]
+
+    # 2. 하나의 for문으로 처리
+    for cl, hl in product(cl_list, hl_list):
+        print(f'cl: {cl}, hl: {hl}') # 따옴표를 넣어 공백 제거 확인

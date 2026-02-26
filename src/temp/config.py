@@ -14,6 +14,16 @@ DATE      = '260225' # date
 MODEL_VER = 'google/timesfm-2.5-200m-pytorch' # FM model verision
 DATA      = 'Etth1'  # dataset name
 
+# # TimesFM
+# CL = 96
+# HL = 192
+
+# # LoRA
+# RANK    = 4
+# ALPHA   = 16
+# DROPOUT = 0.1
+
+
 ###########################################################################################################
 # set path configurations
 ###########################################################################################################
@@ -34,8 +44,8 @@ RES_PATH  = {
         'timesfm_lora_plot': f'./results/plot/timesfm_lora_{DATE}_{DATA}.png',
     },
     'array': {
-        'timesfm_base_preds': f'./results/array/timesfm_base_preds_{DATE}_{DATA}.npy',
-        'timesfm_lora_preds': f'./results/array/timesfm_lora_preds_{DATE}_{DATA}.npy',
+        'timesfm_base_preds': f'./results/predictions/timesfm_base_preds_{DATE}_{DATA}.npy',
+        'timesfm_lora_preds': f'./results/predictions/timesfm_lora_preds_{DATE}_{DATA}.npy',
     }
 }
 

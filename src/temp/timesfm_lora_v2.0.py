@@ -257,9 +257,9 @@ if PIPELINE.get('TimesFM_LoRA', True):
     l_mae, l_mse, l_rmse, l_wape, l_smape = calculate_metrics(lora_actuals, lora_preds)
 
     performance_report = pd.DataFrame({
-        'Metric': ['MAE', 'MSE', 'RMSE', 'WAPE (%)', 'sMAPE (%)'],
-        'Base TimesFM': [b_mae, b_mse, b_rmse, b_wape, b_smape],
-        'TimesFM + LoRA': [l_mae, l_mse, l_rmse, l_wape, l_smape]
+        'Metric': ['MAE', 'MSE', 'WAPE (%)', 'sMAPE (%)'],
+        'Base TimesFM': [b_mae, b_mse, b_wape, b_smape],
+        'TimesFM + LoRA': [l_mae, l_mse, l_wape, l_smape]
     })
 
     # 개선율 계산
