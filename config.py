@@ -6,11 +6,13 @@ import sys
 import pandas as pd
 import numpy as np
 from itertools import product
+import torch
 
 ###########################################################################################################
 # set version configurations
 ###########################################################################################################
 
+DEVICE      = 'cuda' if torch.cuda.is_available() else 'cpu'
 DATA        = 'Etth1'
 TSFM_METHOD = 'TimesFM'
 FT_METHOD   = 'LoRA'
@@ -22,13 +24,13 @@ FT_METHOD   = 'LoRA'
 # name: TimesFM_cl[96]_hl[192]_LoRA_fr[0.7],r[4]_a[16]_d[0.1]_tgt[qkv_proj_out_ff0_ff1]_e[5]_bs[32]
 PARAMS = {
     'TimesFM': {
-        'model_ver': 'TimesFM_2p5_200M_torch',
+        'version': 'TimesFM_2p5_200M_torch',
         'pathch_size': '64',
-        'cl': '96, 192',
-        'hl': '192, 256',
+        'cl': '96, 192',    # context length
+        'hl': '192, 256',   # horizon length
     },
+    'FT_RATIO': '0.7',
     'LoRA': {
-        'ft_ratio': '0.7',
         'rank': '4',
         'alpha': '16',
         'dropout': '0.1',

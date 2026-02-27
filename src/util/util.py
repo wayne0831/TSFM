@@ -28,14 +28,14 @@ class TimeSeriesDataset(Dataset):
     def __len__(self):
         return len(self.data) - self.cl - self.hl
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx, patch_size):
         # slice raw data for context and horizon 
         x = self.data[idx : idx + self.cl] 
         y = self.data[idx + self.cl : idx + self.cl + self.hl]
         
         # set padding length to the nearest multiple of TSFM_PATCH_SIZE (64)
         # cl: 96 -> target_cl: 128
-        target_cl = ((self.cl + TSFM_PATCH_SIZE - 1) // TSFM_PATCH_SIZE) * TSFM_PATCH_SIZE
+        target_cl = ((self.cl + patch_size - 1) // patch_size) * patch_size
         
         # padding for input sequence (context) to match target_cl
         x_padded = np.zeros(target_cl, dtype=np.float32)
@@ -47,17 +47,14 @@ class TimeSeriesDataset(Dataset):
 
         return torch.tensor(x_padded), torch.tensor(y), torch.tensor(mask)
 
-# peform sliding window forecasting and collect predictions and actuals
-def sliding_window_forecast(model_obj, data, cl, hl):
+# peform forecasting and collect predictions and actuals
+def forecast(model_obj, data, cl, hl, patch_size):
     # Initialize lists to store predictions and ground truth values
     predictions, actuals = [], []
-    
-    # Identify the device (GPU or CPU) from the model parameters
-    device = next(model_obj.model.parameters()).device 
 
-    # Calculate padding length to ensure compatibility with TSFM_PATCH_SIZE (64)
+    # Calculate padding length to ensure compatibility with patch_size (64)
     # Example: cl=96 -> target_cl=128
-    target_cl = ((cl + TSFM_PATCH_SIZE - 1) // TSFM_PATCH_SIZE) * TSFM_PATCH_SIZE
+    target_cl = ((cl + patch_size - 1) // patch_size) * patch_size
     
     i = cl 
     while i < len(data):
@@ -80,14 +77,14 @@ def sliding_window_forecast(model_obj, data, cl, hl):
             context_padded[-len(context_raw):] = context_raw # Right-align context
             
             # Step 2: Reshape input into [1, Num_Patches, Patch_Size]
-            num_patches = target_cl // TSFM_PATCH_SIZE
-            inputs_ts = torch.tensor(context_padded).view(1, num_patches, TSFM_PATCH_SIZE).to(device)
+            num_patches = target_cl // patch_size
+            inputs_ts = torch.tensor(context_padded).view(1, num_patches, patch_size).to(DEVICE)
             
             # Step 3: Construct the padding mask (1 for padding, 0 for actual data)
             # Consistent with the logic used in TimeSeriesDataset
             mask_np = np.zeros(target_cl, dtype=np.float32)
             mask_np[:target_cl - len(context_raw)] = 1
-            masks_ts = torch.tensor(mask_np).view(1, num_patches, TSFM_PATCH_SIZE).to(device)
+            masks_ts = torch.tensor(mask_np).view(1, num_patches, patch_size).to(DEVICE)
             
             with torch.no_grad():
                 # Step 4: Perform forward pass through the LoRA-adapted model
