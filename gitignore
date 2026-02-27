@@ -17,4 +17,4 @@ result/
 
 # 실험 결과
 *.npy
-*.pngs
+*.png
