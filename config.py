@@ -13,7 +13,7 @@ import torch
 ###########################################################################################################
 
 DEVICE      = 'cuda' if torch.cuda.is_available() else 'cpu'
-DATA        = 'Etth1'
+DATA        = 'Etth1, Etth2, Ettm1, Ettm2'
 TSFM_METHOD = 'TimesFM'
 FT_METHOD   = 'LoRA'
 
@@ -24,8 +24,8 @@ FT_METHOD   = 'LoRA'
 # name: TimesFM_cl[96]_hl[192]_LoRA_fr[0.7],r[4]_a[16]_d[0.1]_tgt[qkv_proj_out_ff0_ff1]_e[5]_bs[32]
 PARAMS = {
     'TimesFM': {
-        'version': 'TimesFM_2p5_200M_torch',
-        'pathch_size': '64',
+        'version': 'google/timesfm-2.5-200m-pytorch',
+        'patch_size': '64',
         'cl': '96, 192',    # context length
         'hl': '192, 256',   # horizon length
     },
@@ -59,8 +59,8 @@ RES_PATH  = {
         'LoRA': f'./results/plot/LoRA/',
     },
     'predictions': { # .npy
-        'TimesFM': f'./results/predictions/TimesFM',
-        'LoRA': f'./results/predictions/LoRA',
+        'TimesFM': f'./results/predictions/TimesFM/',
+        'LoRA': f'./results/predictions/LoRA/',
     },
     'performance': { # .csv
         'TimesFM': f'./results/performance/TimesFM/',
