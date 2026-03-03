@@ -81,11 +81,13 @@ def run_timesfm_experiment(data_name, tsfm_method, te_context, cl, hl, patch_siz
 
 def run_lora_experiment(data_name, tsfm_method, ft_method, tr_data, te_context, cl, hl, patch_size, 
                         rank, alpha, dropout, target_modules, batch_size, lr, epochs):
+    
     # set tsfm model
     model_ver = PARAMS[tsfm_method]['version']
     
     print(f"Loading TimesFM: {model_ver}...")
     tsfm = TimesFM_2p5_200M_torch.from_pretrained(model_ver)
+
     tsfm_config = ForecastConfig(
         max_context=cl, 
         max_horizon=hl, 
@@ -101,6 +103,7 @@ def run_lora_experiment(data_name, tsfm_method, ft_method, tr_data, te_context, 
         alpha = alpha,
         dropout = dropout
         )
+    print(f"Moving model to {DEVICE}...")    
     tsfm.model.to(DEVICE)
 
     # set trainining set and dataloader
@@ -253,10 +256,11 @@ if __name__ == "__main__":
 
         run_lora_experiment(data_name=dn_item, tsfm_method=tm_item, ft_method=ft_item, tr_data=tr_data, te_context=te_context, cl=cl_item, hl=hl_item, patch_size=ps_item, 
                             rank=rank_item, alpha=alpha_item, dropout=dropout_item, target_modules=target_modules_item, batch_size=batch_size_item, lr=lr_item, epochs=epochs_item)
-
-        # [추가] 메모리 강제 해제
+        
+        # --- 추가: 매 루프 끝에서 모델 메모리 해제 ---
+        if 'tsfm' in locals():
+            del tsfm
         torch.cuda.empty_cache()
         gc.collect()
-        time.sleep(2) # GPU가 정리될 시간을 잠시 줍니다.
     # end for
     

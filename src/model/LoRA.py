@@ -16,20 +16,19 @@ from config import *
 
 # define LoRA layer
 class LoRALayer(nn.Module):
-    def __init__(self, original_layer, rank=8, alpha=16, droput=0.1): # 당시 droput 오타 상태
+    def __init__(self, original_layer, rank=8, alpha=16, dropout=0.1): # 당시 droput 오타 상태
         super().__init__()
-        
+
         self.original_layer = original_layer
-        # 당시에는 여기서 original_layer만 얼렸음
         self.original_layer.weight.requires_grad = False
         
         in_features = original_layer.in_features
         out_features = original_layer.out_features
         
-        self.A = nn.Parameter(torch.empty(rank, in_features))
-        self.B = nn.Parameter(torch.empty(out_features, rank))
+        self.A = nn.Parameter(torch.empty(rank, in_features), requires_grad=True)
+        self.B = nn.Parameter(torch.empty(out_features, rank), requires_grad=True)
         self.scaling = alpha / rank
-        self.dropout = nn.Dropout(p=droput)
+        self.dropout = nn.Dropout(p=dropout)
 
         nn.init.kaiming_uniform_(self.A, a=math.sqrt(5))
         nn.init.zeros_(self.B)
@@ -40,7 +39,11 @@ class LoRALayer(nn.Module):
         return result + lora_out
 
 # 2. apply_lora_to_tsfm 함수
-def apply_lora_to_tsfm(model, target_modules=['qkv_proj'], rank=4, alpha=16, dropout=0.1):    
+def apply_lora_to_tsfm(model, target_modules=['qkv_proj'], rank=4, alpha=16, dropout=0.1):
+    # freeze all parameters of the foundation model
+    for param in model.parameters():
+        param.requires_grad = False
+
     for i, block in enumerate(model.stacked_xf):
         if 'qkv_proj' in target_modules:
             block.attn.qkv_proj = LoRALayer(block.attn.qkv_proj, rank, alpha)
