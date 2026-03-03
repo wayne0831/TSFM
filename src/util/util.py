@@ -20,22 +20,23 @@ from config import *
 
 # define custom Dataset for time-series data
 class TimeSeriesDataset(Dataset):
-    def __init__(self, data, cl, hl):
+    def __init__(self, data, cl, hl, patch_size):
         self.data = data
-        self.cl = cl # context length (e.g., 96)
-        self.hl = hl # horizon length (e.g., 192)
+        self.cl = int(cl) # context length (e.g., 96)
+        self.hl = int(hl) # horizon length (e.g., 192)
+        self.patch_size = int(patch_size) # patch size for TSFM (e.g., 64)
 
     def __len__(self):
         return len(self.data) - self.cl - self.hl
 
-    def __getitem__(self, idx, patch_size):
+    def __getitem__(self, idx):
         # slice raw data for context and horizon 
         x = self.data[idx : idx + self.cl] 
         y = self.data[idx + self.cl : idx + self.cl + self.hl]
         
         # set padding length to the nearest multiple of TSFM_PATCH_SIZE (64)
         # cl: 96 -> target_cl: 128
-        target_cl = ((self.cl + patch_size - 1) // patch_size) * patch_size
+        target_cl = ((self.cl + self.patch_size - 1) // self.patch_size) * self.patch_size
         
         # padding for input sequence (context) to match target_cl
         x_padded = np.zeros(target_cl, dtype=np.float32)

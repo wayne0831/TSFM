@@ -31,11 +31,13 @@ PARAMS = {
     },
     'FT_RATIO': '0.7',
     'LoRA': {
-        'rank': '4',
-        'alpha': '16',
-        'dropout': '0.1',
-        'target_modules': '["qkv_proj", "out", "ff0", "ff1"]',
+        'rank': '2, 4',
+        'alpha': '8, 16',
+        'dropout': '0.05, 0.1',
+        'target_modules': '[["qkv_proj", "out"], ["ff0", "ff1"], ["qkv_proj", "out", "ff0", "ff1"]]',
         'batch_size': '32',
+        'lr': '1e-4, 1e-3',
+        'epochs': '5, 10, 20',
     }
 }
 
