@@ -40,9 +40,7 @@ class LoRALayer(nn.Module):
         return result + lora_out
 
 # 2. apply_lora_to_tsfm 함수
-def apply_lora_to_tsfm(model, target_modules=['qkv_proj'], rank=4, alpha=16, dropout=0.1):
-    # [당시 상태] 모델 전체를 얼리는 model.requires_grad_(False)가 없었음!
-    
+def apply_lora_to_tsfm(model, target_modules=['qkv_proj'], rank=4, alpha=16, dropout=0.1):    
     for i, block in enumerate(model.stacked_xf):
         if 'qkv_proj' in target_modules:
             block.attn.qkv_proj = LoRALayer(block.attn.qkv_proj, rank, alpha)

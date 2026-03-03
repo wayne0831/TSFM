@@ -37,7 +37,7 @@ PARAMS = {
         'target_modules': '[["qkv_proj", "out"], ["ff0", "ff1"], ["qkv_proj", "out", "ff0", "ff1"]]',
         'batch_size': '32',
         'lr': '1e-4, 1e-3',
-        'epochs': '5, 10, 20',
+        'epochs': '1',
     }
 }
 

@@ -3,6 +3,7 @@
 ###########################################################################################################
 
 import ast
+import gc
 import os
 import time
 import ast
@@ -134,8 +135,7 @@ def run_lora_experiment(data_name, tsfm_method, ft_method, tr_data, te_context, 
 
     # save predictions as .npy format
     pred_save_path = RES_PATH['predictions'][ft_method]
-    pred_file_name = f"{tsfm_method}_{data_name}_cl{cl}_hl{hl}_\
-                      {ft_method}_fr{ft_ratio}_r{rank}_a{alpha}_d{dropout}_tgt{target_modules}_bs{batch_size}_lr{lr}_e{epochs}preds.npy"
+    pred_file_name = f"{tsfm_method}_{data_name}_cl{cl}_hl{hl}_{ft_method}_fr{ft_ratio}_r{rank}_a{alpha}_d{dropout}_tgt{target_modules}_bs{batch_size}_lr{lr}_e{epochs}preds.npy"
     pred_npy_save_path  = pred_save_path + pred_file_name
 
     np.save(pred_npy_save_path, lora_preds)
@@ -253,5 +253,10 @@ if __name__ == "__main__":
 
         run_lora_experiment(data_name=dn_item, tsfm_method=tm_item, ft_method=ft_item, tr_data=tr_data, te_context=te_context, cl=cl_item, hl=hl_item, patch_size=ps_item, 
                             rank=rank_item, alpha=alpha_item, dropout=dropout_item, target_modules=target_modules_item, batch_size=batch_size_item, lr=lr_item, epochs=epochs_item)
+
+        # [추가] 메모리 강제 해제
+        torch.cuda.empty_cache()
+        gc.collect()
+        time.sleep(2) # GPU가 정리될 시간을 잠시 줍니다.
     # end for
     
