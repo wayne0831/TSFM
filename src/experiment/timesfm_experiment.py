@@ -70,9 +70,11 @@ def run_timesfm_experiment(data_name, tsfm_method, te_context, cl, hl, patch_siz
     
     res_data = {
         'data': data_name, 'method': tsfm_method, 'cl': cl, 'hl': hl, 
-        'mae': mae, 'mse': mse, 'wape': wape, 'smape': smape, 'inf_time': inf_time
+        'mae': mae, 'mse': mse, 'wape': wape, 'smape': smape, 'inf_time':inf_time
     }
     
+    print(f"Performance Metrics: MAE={mae}, MSE={mse}, WAPE={wape}%, sMAPE={smape}%")
+
     res_df = pd.DataFrame([res_data])
     file_exists = os.path.isfile(res_csv_save_path)
     res_df.to_csv(res_csv_save_path, mode='a', header=not file_exists, index=False)
@@ -82,9 +84,14 @@ def run_timesfm_experiment(data_name, tsfm_method, te_context, cl, hl, patch_siz
 def run_lora_experiment(data_name, tsfm_method, ft_method, tr_data, te_context, cl, hl, patch_size, 
                         rank, alpha, dropout, target_modules, batch_size, lr, epochs):
     
-    # set tsfm model
+    # 1. 데이터 정규화 (Normalization)
+    scaler = TimeSeriesScaler()
+    tr_data_scaled = scaler.fit_transform(tr_data)
+    te_context_scaled = scaler.transform(te_context)
+    print(f"📊 Data Normalized: Mean={scaler.mean:.4f}, Std={scaler.std:.4f}")
+
+    # 2. TimesFM 모델 로드
     model_ver = PARAMS[tsfm_method]['version']
-    
     print(f"Loading TimesFM: {model_ver}...")
     tsfm = TimesFM_2p5_200M_torch.from_pretrained(model_ver)
 
@@ -95,23 +102,25 @@ def run_lora_experiment(data_name, tsfm_method, ft_method, tr_data, te_context, 
         normalize_inputs=True
     )
 
+    # 3. LoRA 적용
     print(f"Loading LoRA...")
-    tsfm.model = apply_lora_to_tsfm(
+    tsfm.model, tr_params_ratio = apply_lora_to_tsfm(
         model = tsfm.model,
         target_modules = target_modules,
         rank = rank,
         alpha = alpha,
         dropout = dropout
-        )
+    )
+    
     print(f"Moving model to {DEVICE}...")    
     tsfm.model.to(DEVICE)
 
-    # set trainining set and dataloader
-    train_dataset = TimeSeriesDataset(tr_data, cl=cl, hl=hl, patch_size=patch_size)
+    # 4. 정규화된 데이터로 DataLoader 설정
+    train_dataset = TimeSeriesDataset(tr_data_scaled, cl=cl, hl=hl, patch_size=patch_size)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
-    # train the LoRA-adapted model
-    print(f"\n Training for {epochs} epochs...")
+    # 5. 모델 학습 (정규화된 상태에서 진행)
+    print(f"\n🚀 Training for {epochs} epochs (Normalized Scale)...")
     train_start_time = time.time()
     
     tsfm_lora, history = train(tsfm, train_loader, hl, patch_size, lr, epochs)
@@ -121,50 +130,64 @@ def run_lora_experiment(data_name, tsfm_method, ft_method, tr_data, te_context, 
 
     print("\n" + "="*50)
     print(f"✅ Training Completed!")
-    print(f"Total Training Time: {total_train_time:.2f}s ({total_train_time/60:.2f} mins)")
+    print(f"Total Training Time: {total_train_time:.2f}s")
     print(f"Average Time per Epoch: {avg_epoch_time:.2f}s")
     print("="*50)
 
-    # # build tsfm model
+    # 6. 추론 및 역정규화 (Inverse Transform)
     tsfm_lora.compile(tsfm_config)
-
     print("Predicting with TimesFM + LoRA...")
     start_inf_time = time.time()
+    
     with torch.no_grad():
-        lora_preds, lora_actuals = forecast(model_obj=tsfm_lora, data=te_context, cl=cl, hl=hl, patch_size=patch_size)
-    # end with
+        # 정규화된 컨텍스트로 예측 수행
+        lora_preds_scaled, lora_actuals_scaled = forecast(
+            model_obj=tsfm_lora, 
+            data=te_context_scaled, 
+            cl=cl, hl=hl, 
+            patch_size=patch_size
+        )
+    
     inf_time = time.time() - start_inf_time
+
+    # 예측값과 실제값을 다시 원래 스케일(OT 값)로 복원
+    lora_preds = scaler.inverse_transform(lora_preds_scaled)
+    lora_actuals = scaler.inverse_transform(lora_actuals_scaled)
     print(f"TimesFM + LoRA Inference Time: {inf_time:.2f}s")
 
-    # save predictions as .npy format
-    pred_save_path = RES_PATH['predictions'][ft_method]
-    pred_file_name = f"{tsfm_method}_{data_name}_cl{cl}_hl{hl}_{ft_method}_fr{ft_ratio}_r{rank}_a{alpha}_d{dropout}_tgt{target_modules}_bs{batch_size}_lr{lr}_e{epochs}preds.npy"
-    pred_npy_save_path  = pred_save_path + pred_file_name
-
-    np.save(pred_npy_save_path, lora_preds)
-    print(f"✅ Predictions saved to: {pred_npy_save_path}")    
-
-    # calcualte performance metrics
+    # 7. 성능 지표 계산 및 저장
     mae, mse, wape, smape = calculate_metrics(lora_actuals, lora_preds)
 
-    # save results as .csv format
+    pred_save_path = RES_PATH['predictions'][ft_method]
+    pred_file_name = f"{tsfm_method}_{data_name}_cl{cl}_hl{hl}_{ft_method}_r{rank}_lr{lr}_e{epochs}_preds.npy"
+    pred_npy_save_path = os.path.join(pred_save_path, pred_file_name)
+
+    np.save(pred_npy_save_path, lora_preds)
+    print(f"✅ Real-scale Predictions saved to: {pred_npy_save_path}")    
+
     res_save_path = RES_PATH['performance'][ft_method]
     res_file_name = f"{tsfm_method}_{ft_method}_performance.csv"
-    res_csv_save_path = res_save_path + res_file_name
+    res_csv_save_path = os.path.join(res_save_path, res_file_name)
     
     res_data = {
         'data': data_name, 'method': tsfm_method, 'cl': cl, 'hl': hl, 
-        'ft_method': ft_method, 'ft_ratio': ft_ratio, 'rank': rank, 'alpha': alpha, 'dropout': dropout, 
-        'target_modules': target_modules, 'batch_size': batch_size, 'lr': lr, 'epochs': epochs, 
-        'mae': mae, 'mse': mse, 'wape': wape, 'smape': smape, 'tr_time': total_train_time, 'inf_time': inf_time
+        'ft_method': ft_method, 'rank': rank, 'alpha': alpha, 'lr': lr, 'epochs': epochs, 
+        'mae': mae, 'mse': mse, 'wape': wape, 'smape': smape, 
+        'tr_time': total_train_time, 'inf_time': inf_time, 'tr_params_ratio': tr_params_ratio
     }
     
+    print(f"Performance Metrics: MAE={mae}, MSE={mse}, WAPE={wape}%, sMAPE={smape}%")
+
     res_df = pd.DataFrame([res_data])
     file_exists = os.path.isfile(res_csv_save_path)
     res_df.to_csv(res_csv_save_path, mode='a', header=not file_exists, index=False)
     
-    print(f"✅Performance metrics saved to: {res_csv_save_path}")
-
+    # 8. 메모리 해제 및 구조 원복
+    print('🔄 Reverting model structure and clearing cache...')
+    tsfm.model = remove_lora_from_tsfm(tsfm.model)
+    del tsfm
+    gc.collect()
+    torch.cuda.empty_cache()
 
 if __name__ == "__main__":
     # set common configurations
@@ -209,58 +232,55 @@ if __name__ == "__main__":
     tsfm_comb = list(product(data_name_list, tsfm_method_list, path_size_list, ft_ratio_list, cl_list, hl_list))
     tsfm_total_comb = len(tsfm_comb)
 
-    # # run TimesFM exepriemnt
-    # for idx, (dn_item, tm_item, ps_item, fr_item, cl_item, hl_item) in enumerate(tsfm_comb, 1):
-    #     print("\n" + "="*60)        
-    #     print(f"Experiment [{idx} / {tsfm_total_comb}]") 
-    #     print(f'data_name: {dn_item}, tsfm_method: {tm_item}, patch_size: {ps_item}, ft_ratio: {fr_item}, cl: {cl_item}, hl: {hl_item}')
-    
-    #     # load raw data
-    #     df_path = DATA_PATH[dn_item]
-    #     tgt_col = DATASET[dn_item]['target_col']
-    #     df_raw  = pd.read_csv(df_path)
+    # run TimesFM exepriemnt
+    if PIPELINE['TimesFM']:
+        for idx, (dn_item, tm_item, ps_item, fr_item, cl_item, hl_item) in enumerate(tsfm_comb, 1):
+            print("\n" + "="*60)        
+            print(f"Experiment [{idx} / {tsfm_total_comb}]") 
+            print(f'data_name: {dn_item}, tsfm_method: {tm_item}, patch_size: {ps_item}, ft_ratio: {fr_item}, cl: {cl_item}, hl: {hl_item}')
+        
+            # load raw data
+            df_path = DATA_PATH[dn_item]
+            tgt_col = DATASET[dn_item]['target_col']
+            df_raw  = pd.read_csv(df_path)
 
-    #     # set target data and split fine tuning / test set
-    #     target = df_raw[tgt_col].values.astype(np.float32)
-    #     ft_len = int(len(target) * fr_item)
+            # set target data and split fine tuning / test set
+            target = df_raw[tgt_col].values.astype(np.float32)
+            ft_len = int(len(target) * fr_item)
 
-    #     tr_data = target[:ft_len] 
-    #     te_data = target[ft_len:] 
-    #     te_context = target[ft_len - cl_item:]
+            tr_data = target[:ft_len] 
+            te_data = target[ft_len:] 
+            te_context = target[ft_len - cl_item:]
 
-    #     run_timesfm_experiment(dn_item, tm_item, te_context, cl_item, hl_item, ps_item)
-    # # end for
+            run_timesfm_experiment(dn_item, tm_item, te_context, cl_item, hl_item, ps_item)
+        # end for
+    # end if
 
     tsfm_lora_comb = list(product(data_name_list, tsfm_method_list, ft_method_list, path_size_list, ft_ratio_list, cl_list, hl_list, 
                                   rank_list, alpha_list, dropout_list, target_modules_list, batch_size_list, lr_list, epochs_list))
     tsfm_lora_total_comb = len(tsfm_lora_comb)
 
-    for idx, (dn_item, tm_item, ft_item, ps_item, fr_item, cl_item, hl_item, rank_item, alpha_item, dropout_item, target_modules_item, batch_size_item, lr_item, epochs_item) in enumerate(tsfm_lora_comb, 1):
-        print("\n" + "="*60)        
-        print(f"Experiment [{idx} / {tsfm_lora_total_comb}]") 
-        print(f'data_name: {dn_item}, tsfm_method: {tm_item}, ft_method: {ft_item}, patch_size: {ps_item}, ft_ratio: {fr_item}, cl: {cl_item}, hl: {hl_item}')
-        print(f'rank: {rank_item}, alpha: {alpha_item}, dropout: {dropout_item}, target_modules: {target_modules_item}, batch_size: {batch_size_item}, lr: {lr_item}, epochs: {epochs_item}')
+    if PIPELINE['LoRA']:
+        for idx, (dn_item, tm_item, ft_item, ps_item, fr_item, cl_item, hl_item, rank_item, alpha_item, dropout_item, target_modules_item, batch_size_item, lr_item, epochs_item) in enumerate(tsfm_lora_comb, 1):
+            print("\n" + "="*60)        
+            print(f"Experiment [{idx} / {tsfm_lora_total_comb}]") 
+            print(f'data_name: {dn_item}, tsfm_method: {tm_item}, ft_method: {ft_item}, patch_size: {ps_item}, ft_ratio: {fr_item}, cl: {cl_item}, hl: {hl_item}')
+            print(f'rank: {rank_item}, alpha: {alpha_item}, dropout: {dropout_item}, target_modules: {target_modules_item}, batch_size: {batch_size_item}, lr: {lr_item}, epochs: {epochs_item}')
 
-        # load raw data
-        df_path = DATA_PATH[dn_item]
-        tgt_col = DATASET[dn_item]['target_col']
-        df_raw  = pd.read_csv(df_path)
+            # load raw data
+            df_path = DATA_PATH[dn_item]
+            tgt_col = DATASET[dn_item]['target_col']
+            df_raw  = pd.read_csv(df_path)
 
-        # set target data and split fine tuning / test set
-        target = df_raw[tgt_col].values.astype(np.float32)
-        ft_len = int(len(target) * fr_item)
+            # set target data and split fine tuning / test set
+            target = df_raw[tgt_col].values.astype(np.float32)
+            ft_len = int(len(target) * fr_item)
 
-        tr_data = target[:ft_len] 
-        te_data = target[ft_len:] 
-        te_context = target[ft_len - cl_item:]
+            tr_data = target[:ft_len] 
+            te_data = target[ft_len:] 
+            te_context = target[ft_len - cl_item:]
 
-        run_lora_experiment(data_name=dn_item, tsfm_method=tm_item, ft_method=ft_item, tr_data=tr_data, te_context=te_context, cl=cl_item, hl=hl_item, patch_size=ps_item, 
-                            rank=rank_item, alpha=alpha_item, dropout=dropout_item, target_modules=target_modules_item, batch_size=batch_size_item, lr=lr_item, epochs=epochs_item)
-        
-        # --- 추가: 매 루프 끝에서 모델 메모리 해제 ---
-        if 'tsfm' in locals():
-            del tsfm
-        torch.cuda.empty_cache()
-        gc.collect()
-    # end for
-    
+            run_lora_experiment(data_name=dn_item, tsfm_method=tm_item, ft_method=ft_item, tr_data=tr_data, te_context=te_context, cl=cl_item, hl=hl_item, patch_size=ps_item, 
+                                rank=rank_item, alpha=alpha_item, dropout=dropout_item, target_modules=target_modules_item, batch_size=batch_size_item, lr=lr_item, epochs=epochs_item)
+        # end for
+    # end if

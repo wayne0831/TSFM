@@ -12,8 +12,9 @@ __pycache__/
 
 # 데이터 및 결과 (용량이 크면 제외 추천)
 data/
-result/
-*.csv
+results/predictions
+results/plot
+#*.csv
 
 # 실험 결과
 *.npy

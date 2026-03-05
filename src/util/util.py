@@ -48,6 +48,23 @@ class TimeSeriesDataset(Dataset):
 
         return torch.tensor(x_padded), torch.tensor(y), torch.tensor(mask)
 
+class TimeSeriesScaler:
+    def __init__(self):
+        self.mean = None
+        self.std = None
+
+    def fit_transform(self, data):
+        self.mean = np.mean(data)
+        self.std = np.std(data) + 1e-8
+        return (data - self.mean) / self.std
+
+    def transform(self, data):
+        return (data - self.mean) / self.std
+
+    def inverse_transform(self, data):
+        """예측된 표준화 값을 다시 원래 스케일로 복원"""
+        return (data * self.std) + self.mean
+
 # peform forecasting and collect predictions and actuals
 def forecast(model_obj, data, cl, hl, patch_size):
     # Initialize lists to store predictions and ground truth values
@@ -123,4 +140,4 @@ def calculate_metrics(actual, pred):
     # 분모에 실제값과 예측값의 평균을 사용하여 0~200% 사이의 값을 가지도록 정규화
     smape = np.mean(np.abs(actual - pred) / ((np.abs(actual) + np.abs(pred)) / 2 + 1e-8)) * 100
     
-    return mae, mse, wape, smape
+    return round(mae, 4), round(mse, 4), round(wape, 2), round(smape, 2)
