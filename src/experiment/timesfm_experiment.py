@@ -156,6 +156,7 @@ def run_lora_experiment(data_name, tsfm_method, ft_method, tr_data, te_context, 
 
     # 7. 성능 지표 계산 및 저장
     mae, mse, wape, smape = calculate_metrics(lora_actuals, lora_preds)
+    mae_scl, mse_scl, wape_scl, smape_scl = calculate_metrics(lora_actuals_scaled, lora_preds_scaled)
 
     pred_save_path = RES_PATH['predictions'][ft_method]
     pred_file_name = f"{tsfm_method}_{data_name}_cl{cl}_hl{hl}_{ft_method}_r{rank}_a{alpha}_d{dropout}_tgt{target_modules}_lr{lr}_e{epochs}_bs{batch_size}_preds.npy"
@@ -173,6 +174,7 @@ def run_lora_experiment(data_name, tsfm_method, ft_method, tr_data, te_context, 
         'ft_method': ft_method, 'rank': rank, 'alpha': alpha, 'dropout': dropout, 
         'target_modules': str(target_modules), 'lr': lr, 'epochs': epochs, 'batch_size': batch_size, 
         'mae': mae, 'mse': mse, 'wape': wape, 'smape': smape, 
+        'mae_scl': mae_scl, 'mse_scl': mse_scl, 'wape_scl': wape_scl, 'smape_scl': smape_scl,
         'tr_time': total_train_time, 'inf_time': inf_time, 'tr_params_ratio': tr_params_ratio
     }
     
