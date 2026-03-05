@@ -158,7 +158,7 @@ def run_lora_experiment(data_name, tsfm_method, ft_method, tr_data, te_context, 
     mae, mse, wape, smape = calculate_metrics(lora_actuals, lora_preds)
 
     pred_save_path = RES_PATH['predictions'][ft_method]
-    pred_file_name = f"{tsfm_method}_{data_name}_cl{cl}_hl{hl}_{ft_method}_r{rank}_lr{lr}_e{epochs}_preds.npy"
+    pred_file_name = f"{tsfm_method}_{data_name}_cl{cl}_hl{hl}_{ft_method}_r{rank}_a{alpha}_d{dropout}_tgt{target_modules}_lr{lr}_e{epochs}_bs{batch_size}_preds.npy"
     pred_npy_save_path = os.path.join(pred_save_path, pred_file_name)
 
     np.save(pred_npy_save_path, lora_preds)
