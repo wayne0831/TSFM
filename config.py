@@ -31,13 +31,13 @@ PARAMS = {
     },
     'FT_RATIO': '0.7',
     'LoRA': {
-        'rank': '2, 4',
+        'rank': '4',
         'alpha': '8',
         'dropout': '0.1',
         'target_modules': '[["qkv_proj", "out"], ["ff0", "ff1"], ["qkv_proj", "out", "ff0", "ff1"]]',
         'lr': '1e-4',
         'epochs': '5',
-        'batch_size': '32',
+        'batch_size': '16',
 
     }
 }
@@ -91,19 +91,24 @@ DATASET = {
 }
 
 PIPELINE = {
-    'TimesFM': False,
+    'TimesFM': True,
     'LoRA': True,
 }
 
 
+# if __name__ == "__main__":
+#     CL = PARAMS[TSFM_METHOD]['cl']
+#     HL = PARAMS[TSFM_METHOD]['hl']
+
+#     # 1. ','를 기준으로 문자열 분리 (리스트 생성)
+#     cl_list = [x.strip() for x in CL.split(',')]
+#     hl_list = [x.strip() for x in HL.split(',')]
+
+#     # 2. 하나의 for문으로 처리
+#     for cl, hl in product(cl_list, hl_list):
+#         print(f'cl: {cl}, hl: {hl}') # 따옴표를 넣어 공백 제거 확인
+
 if __name__ == "__main__":
-    CL = PARAMS[TSFM_METHOD]['cl']
-    HL = PARAMS[TSFM_METHOD]['hl']
-
-    # 1. ','를 기준으로 문자열 분리 (리스트 생성)
-    cl_list = [x.strip() for x in CL.split(',')]
-    hl_list = [x.strip() for x in HL.split(',')]
-
-    # 2. 하나의 for문으로 처리
-    for cl, hl in product(cl_list, hl_list):
-        print(f'cl: {cl}, hl: {hl}') # 따옴표를 넣어 공백 제거 확인
+    if torch.cuda.is_available():
+        print(f"GPU 사용 가능 여부: {torch.cuda.is_available()}")
+        print(f"현재 디바이스: {torch.cuda.get_device_name(0)}")

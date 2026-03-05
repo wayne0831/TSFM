@@ -192,6 +192,10 @@ def run_lora_experiment(data_name, tsfm_method, ft_method, tr_data, te_context, 
     torch.cuda.empty_cache()
 
 if __name__ == "__main__":
+    if torch.cuda.is_available():
+        print(f"GPU 사용 가능 여부: {torch.cuda.is_available()}")
+        print(f"현재 디바이스: {torch.cuda.get_device_name(0)}")
+    
     # set common configurations
     data_name   = DATA
 
