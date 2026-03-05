@@ -26,8 +26,8 @@ PARAMS = {
     'TimesFM': {
         'version': 'google/timesfm-2.5-200m-pytorch',
         'patch_size': '64',
-        'cl': '96, 192',    # context length
-        'hl': '192, 256',   # horizon length
+        'cl': '96',    # context length
+        'hl': '96, 192, 336, 720',   # horizon length
     },
     'FT_RATIO': '0.7',
     'LoRA': {
@@ -35,9 +35,10 @@ PARAMS = {
         'alpha': '8',
         'dropout': '0.1',
         'target_modules': '[["qkv_proj", "out"], ["ff0", "ff1"], ["qkv_proj", "out", "ff0", "ff1"]]',
-        'batch_size': '8',
         'lr': '1e-4',
-        'epochs': '10',
+        'epochs': '5',
+        'batch_size': '32',
+
     }
 }
 

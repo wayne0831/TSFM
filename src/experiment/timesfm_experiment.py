@@ -88,7 +88,8 @@ def run_lora_experiment(data_name, tsfm_method, ft_method, tr_data, te_context, 
     scaler = TimeSeriesScaler()
     tr_data_scaled = scaler.fit_transform(tr_data)
     te_context_scaled = scaler.transform(te_context)
-    print(f"📊 Data Normalized: Mean={scaler.mean:.4f}, Std={scaler.std:.4f}")
+    print(f"Data Statistics: Mean={scaler.mean:.4f}, Std={scaler.std:.4f}")
+    print(f"Tr scaled: Mean={tr_data_scaled.mean():.4f}, Std={tr_data_scaled.std():.4f} | Te scaled: Mean={te_context_scaled.mean():.4f}, Std={te_context_scaled.std():.4f}")
 
     # 2. TimesFM 모델 로드
     model_ver = PARAMS[tsfm_method]['version']
@@ -111,8 +112,6 @@ def run_lora_experiment(data_name, tsfm_method, ft_method, tr_data, te_context, 
         alpha = alpha,
         dropout = dropout
     )
-    
-    print(f"Moving model to {DEVICE}...")    
     tsfm.model.to(DEVICE)
 
     # 4. 정규화된 데이터로 DataLoader 설정
@@ -120,7 +119,7 @@ def run_lora_experiment(data_name, tsfm_method, ft_method, tr_data, te_context, 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
     # 5. 모델 학습 (정규화된 상태에서 진행)
-    print(f"\n🚀 Training for {epochs} epochs (Normalized Scale)...")
+    print(f"\n Training for {epochs} epochs...")
     train_start_time = time.time()
     
     tsfm_lora, history = train(tsfm, train_loader, hl, patch_size, lr, epochs)
@@ -171,7 +170,8 @@ def run_lora_experiment(data_name, tsfm_method, ft_method, tr_data, te_context, 
     
     res_data = {
         'data': data_name, 'method': tsfm_method, 'cl': cl, 'hl': hl, 
-        'ft_method': ft_method, 'rank': rank, 'alpha': alpha, 'lr': lr, 'epochs': epochs, 
+        'ft_method': ft_method, 'rank': rank, 'alpha': alpha, 'dropout': dropout, 
+        'target_modules': str(target_modules), 'lr': lr, 'epochs': epochs, 'batch_size': batch_size, 
         'mae': mae, 'mse': mse, 'wape': wape, 'smape': smape, 
         'tr_time': total_train_time, 'inf_time': inf_time, 'tr_params_ratio': tr_params_ratio
     }
