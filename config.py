@@ -13,7 +13,7 @@ import torch
 ###########################################################################################################
 
 DEVICE      = 'cuda' if torch.cuda.is_available() else 'cpu'
-DATA        = 'Etth1, Etth2, Ettm1, Ettm2'
+DATA        = 'Etth1' # 'Etth1, Etth2, Ettm1, Ettm2'
 TSFM_METHOD = 'TimesFM'
 FT_METHOD   = 'LoRA'
 
@@ -31,12 +31,12 @@ PARAMS = {
     },
     'FT_RATIO': '0.7',
     'LoRA': {
-        'rank': '4',
+        'rank': '2',
         'alpha': '8',
         'dropout': '0.1',
         'target_modules': '[["qkv_proj", "out"], ["ff0", "ff1"], ["qkv_proj", "out", "ff0", "ff1"]]',
-        'lr': '1e-4',
-        'epochs': '5',
+        'lr': '1e-3',
+        'epochs': '2',
         'batch_size': '16',
 
     }

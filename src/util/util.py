@@ -84,11 +84,13 @@ def forecast(model_obj, data, cl, hl, patch_size):
         actual = data[i : i + remaining_len]
         
         try:
+            print(f"\n🔍 Forecasting with TimesFM")
             # Standard inference path for the TimesFM model
             forecast_output, _ = model_obj.forecast(inputs=[context_raw], horizon=remaining_len)
             pred_values = forecast_output[0]
             
         except Exception:
+            print(f"\n🔍 Forecasting with Manual inference for LoRA-tuned models")
             # Fallback path: Manual inference for LoRA-tuned models
             # Step 1: Pad the context to meet the model's patch-based input requirements
             context_padded = np.zeros(target_cl, dtype=np.float32)
