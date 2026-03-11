@@ -290,7 +290,8 @@ if __name__ == "__main__":
             df_raw  = pd.read_csv(df_path)
 
             # set target data and split fine tuning / test set
-            target = df_raw[tgt_col].values.astype(np.float32)
+            # target = df_raw[tgt_col].values.astype(np.float32)
+            target = df_raw[tgt_col].fillna(0).values.astype(np.float32)
             ft_len = int(len(target) * fr_item)
 
             tr_data = target[:ft_len] 

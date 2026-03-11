@@ -22,27 +22,19 @@ from config import *
 class TimeSeriesDataset(Dataset):
     def __init__(self, data, cl, hl, patch_size):
         self.data = data
-        self.cl = int(cl) # context length (e.g., 96)
-        self.hl = int(hl) # horizon length (e.g., 192)
-        self.patch_size = int(patch_size) # patch size for TSFM (e.g., 64)
+        self.cl, self.hl, self.p_size = int(cl), int(hl), int(patch_size)
 
     def __len__(self):
         return len(self.data) - self.cl - self.hl
 
     def __getitem__(self, idx):
-        # slice raw data for context and horizon 
         x = self.data[idx : idx + self.cl] 
         y = self.data[idx + self.cl : idx + self.cl + self.hl]
         
-        # set padding length to the nearest multiple of TSFM_PATCH_SIZE (64)
-        # cl: 96 -> target_cl: 128
-        target_cl = ((self.cl + self.patch_size - 1) // self.patch_size) * self.patch_size
-        
-        # padding for input sequence (context) to match target_cl
+        target_cl = ((self.cl + self.p_size - 1) // self.p_size) * self.p_size
         x_padded = np.zeros(target_cl, dtype=np.float32)
-        x_padded[-len(x):] = x # set actual data at the end (right alignment)
+        x_padded[-len(x):] = x 
         
-        # generate mask for padded input (1 for padding, 0 for actual data)
         mask = np.zeros(target_cl, dtype=np.float32)
         mask[:target_cl - len(x)] = 1
 
@@ -50,96 +42,66 @@ class TimeSeriesDataset(Dataset):
 
 class TimeSeriesScaler:
     def __init__(self):
-        self.mean = None
-        self.std = None
-
+        self.mean = self.std = None
     def fit_transform(self, data):
-        self.mean = np.mean(data)
-        self.std = np.std(data) + 1e-8
+        self.mean, self.std = np.mean(data), np.std(data) + 1e-8
         return (data - self.mean) / self.std
-
     def transform(self, data):
         return (data - self.mean) / self.std
-
     def inverse_transform(self, data):
-        """예측된 표준화 값을 다시 원래 스케일로 복원"""
         return (data * self.std) + self.mean
 
-# peform forecasting and collect predictions and actuals
-def forecast(model_obj, data, cl, hl, patch_size):
-    # Initialize lists to store predictions and ground truth values
-    predictions, actuals = [], []
+def calculate_metrics(actual, pred):
+    mae = np.mean(np.abs(actual - pred))
+    mse = np.mean((actual - pred)**2)
+    wape = (np.sum(np.abs(actual - pred)) / (np.sum(np.abs(actual)) + 1e-8)) * 100
+    smape = np.mean(np.abs(actual - pred) / ((np.abs(actual) + np.abs(pred)) / 2 + 1e-8)) * 100
+    return round(mae, 4), round(mse, 4), round(wape, 2), round(smape, 2)
 
-    # Calculate padding length to ensure compatibility with patch_size (64)
-    # Example: cl=96 -> target_cl=128
-    target_cl = ((cl + patch_size - 1) // patch_size) * patch_size
+def forecast(model_obj, data, cl, hl, patch_size):
+    predictions, actuals = [], []
+    p_size = int(patch_size)
+    target_cl = ((cl + p_size - 1) // p_size) * p_size
     
+    # LoRA 레이어 유무 확인
+    is_lora = any("LoRALayer" in str(type(m)) for m in model_obj.model.modules())
+
     i = cl 
     while i < len(data):
-        # Determine the length of the current prediction window (handle end-of-series)
-        remaining_len = min(hl, len(data) - i)
+        rem_len = min(hl, len(data) - i)
+        ctx_raw, actual = data[i - cl : i], data[i : i + rem_len]
         
-        # Extract the context (lookback) and the actual future values (ground truth)
-        context_raw = data[i - cl : i]
-        actual = data[i : i + remaining_len]
-        
-        try:
-            print(f"\n🔍 Forecasting with TimesFM")
-            # Standard inference path for the TimesFM model
-            forecast_output, _ = model_obj.forecast(inputs=[context_raw], horizon=remaining_len)
-            pred_values = forecast_output[0]
+        if is_lora:
+            if i == cl: print(f"🔍 [Mode] Manual inference (LoRA-tuned)")
+            ctx_padded = np.zeros(target_cl, dtype=np.float32)
+            ctx_padded[-len(ctx_raw):] = ctx_raw
             
-        except Exception:
-            print(f"\n🔍 Forecasting with Manual inference for LoRA-tuned models")
-            # Fallback path: Manual inference for LoRA-tuned models
-            # Step 1: Pad the context to meet the model's patch-based input requirements
-            context_padded = np.zeros(target_cl, dtype=np.float32)
-            context_padded[-len(context_raw):] = context_raw # Right-align context
+            num_patches = target_cl // p_size
+            inputs_ts = torch.tensor(ctx_padded).view(1, num_patches, p_size).to(DEVICE)
             
-            # Step 2: Reshape input into [1, Num_Patches, Patch_Size]
-            num_patches = target_cl // patch_size
-            inputs_ts = torch.tensor(context_padded).view(1, num_patches, patch_size).to(DEVICE)
-            
-            # Step 3: Construct the padding mask (1 for padding, 0 for actual data)
-            # Consistent with the logic used in TimeSeriesDataset
             mask_np = np.zeros(target_cl, dtype=np.float32)
-            mask_np[:target_cl - len(context_raw)] = 1
-            masks_ts = torch.tensor(mask_np).view(1, num_patches, patch_size).to(DEVICE)
+            mask_np[:target_cl - len(ctx_raw)] = 1
+            masks_ts = torch.tensor(mask_np).view(1, num_patches, p_size).to(DEVICE)
             
             with torch.no_grad():
-                # Step 4: Perform forward pass through the LoRA-adapted model
                 outputs = model_obj.model(inputs_ts, masks_ts)
-                
-                # Step 5: Unpack potential tuple/list output structures from the model
                 while isinstance(outputs, (tuple, list)): 
                     outputs = outputs[0]
                 
-                # Step 6: Extract point forecast (Channel 0) and reshape
-                # Format: [Batch, Num_Patches, Patch_Size, Bins] -> [Total_Seq_Len]
-                all_preds = outputs[0, :, :, 0].reshape(-1)
-                
-                # Step 7: Slice the relevant horizon window from the end of the predictions
-                # Since TSFM predicts the next hl steps relative to the context
-                pred_values = all_preds[-hl : -hl + remaining_len].cpu().numpy()
+                if outputs.dim() == 4:
+                    all_preds = outputs[0, :, :, 0].reshape(-1)
+                else:  # 3차원일 경우
+                    all_preds = outputs[0].reshape(-1)
+                    
+                # [수정] 슬라이싱 버그 해결
+                pred_values = all_preds[-hl:][:rem_len].cpu().numpy()
+        else:
+            if i == cl: print(f"🔍 [Mode] Standard TimesFM")
+            f_out, _ = model_obj.forecast(inputs=[ctx_raw], horizon=rem_len)
+            pred_values = f_out[0]
 
-        # Collect results and advance the window by the horizon length
         predictions.extend(pred_values)
         actuals.extend(actual)
         i += hl
 
     return np.array(predictions), np.array(actuals)
-
-# calculate performance metrics
-def calculate_metrics(actual, pred):
-    mae  = np.mean(np.abs(actual - pred))
-    mse  = np.mean((actual - pred)**2)
-
-    # WAPE (Weighted Absolute Percentage Error)
-    # 전체 실제값의 크기 대비 전체 오차의 합을 측정하여 모델의 전반적인 정확도를 평가
-    wape = (np.sum(np.abs(actual - pred)) / (np.sum(np.abs(actual)) + 1e-8)) * 100
-    
-    # 2sMAPE (Symmetric MAPE)
-    # 분모에 실제값과 예측값의 평균을 사용하여 0~200% 사이의 값을 가지도록 정규화
-    smape = np.mean(np.abs(actual - pred) / ((np.abs(actual) + np.abs(pred)) / 2 + 1e-8)) * 100
-    
-    return round(mae, 4), round(mse, 4), round(wape, 2), round(smape, 2)

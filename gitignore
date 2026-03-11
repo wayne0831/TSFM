@@ -11,7 +11,7 @@ __pycache__/
 .vscode/
 
 # 데이터 및 결과 (용량이 크면 제외 추천)
-data/
+#data/
 results/predictions
 results/plot
 #*.csv
