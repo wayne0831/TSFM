@@ -6,7 +6,6 @@ import ast
 import gc
 import os
 import time
-import ast
 import torch
 import pandas as pd
 import numpy as np
@@ -19,18 +18,18 @@ from torch.utils.data import DataLoader, Dataset
 from src.util.util import *
 from src.model.LoRA import *
 from config import *
+from itertools import product
 
 ###########################################################################################################
 # set user-defined functions
 ###########################################################################################################
 
 def run_timesfm_experiment(data_name, tsfm_method, tr_data, te_data, cl, hl, patch_size):
-    # data scaling
-    scaler = TimeSeriesScaler()
-    tr_data_scl = scaler.fit_transform(tr_data)
-    te_data_scl = scaler.transform(te_data)
-    print(f"Data Statistics: Mean={scaler.mean:.4f}, Std={scaler.std:.4f}")
-    print(f"Tr scaled: Mean={tr_data_scl.mean():.4f}, Std={tr_data_scl.std():.4f} | Te scaled: Mean={te_data_scl.mean():.4f}, Std={te_data_scl.std():.4f}")
+    # [수정] 평가용 글로벌 스케일러 세팅 (모델 입력에는 쓰지 않고 정규화 지표 계산에만 사용)
+    eval_scaler = TimeSeriesScaler()
+    _ = eval_scaler.fit_transform(tr_data) # 훈련 데이터 기준으로 mean, std 계산
+    
+    print(f"Global Scaling info for evaluation: Mean={eval_scaler.mean:.4f}, Std={eval_scaler.std:.4f}")
 
     # set tsfm model
     model_ver = PARAMS[tsfm_method]['version']
@@ -41,7 +40,7 @@ def run_timesfm_experiment(data_name, tsfm_method, tr_data, te_data, cl, hl, pat
         max_context=cl, 
         max_horizon=hl, 
         use_continuous_quantile_head=True, 
-        normalize_inputs=False # 위에 data scaling을 수행하고 여러 기법들 간 공정한 성능 비교를 위해 False로 세팅
+        normalize_inputs=True # [수정] 모델 내부 정규화(Instance Norm) 활성화
     )
 
     # build tsfm model
@@ -51,33 +50,36 @@ def run_timesfm_experiment(data_name, tsfm_method, tr_data, te_data, cl, hl, pat
     # predict test set with tsfm
     print("Predicting with TimesFM...")
     start_inf_time = time.time()
-    base_preds_scl, base_actuals_scl = forecast(
+    
+    # [수정] 원본 데이터를 그대로 넣고, 원본 스케일의 예측값을 받음
+    base_preds, base_actuals = forecast(
         model_obj=tsfm, 
-        data=te_data_scl, 
+        data=te_data, 
         cl=cl, 
         hl=hl, 
         patch_size=patch_size
     )
-    # reverse scaling to get predictions and actuals in original scale
-    base_preds   = scaler.inverse_transform(base_preds_scl)
-    base_actuals = scaler.inverse_transform(base_actuals_scl)
+    
+    # [수정] 정규화된 지표(_scl)를 구하기 위해 글로벌 스케일러로 변환
+    base_preds_scl = eval_scaler.transform(base_preds)
+    base_actuals_scl = eval_scaler.transform(base_actuals)
 
     print(f"# of predictions: {len(base_preds)}, # of actuals: {len(base_actuals)}")
-    print(f"Predictions: {base_preds[:10]}, # actuals: {base_actuals[:10]}")
-    print(f'Scaled predictions: {base_preds_scl[:10]}, Scaled actuals: {base_actuals_scl[:10]}')    
+    print(f"Predictions: {base_preds[:5]}, # actuals: {base_actuals[:5]}")
+    print(f'Scaled predictions: {base_preds_scl[:5]}, Scaled actuals: {base_actuals_scl[:5]}')    
 
     inf_time = time.time() - start_inf_time
     print(f"TimesFM Inference Time: {inf_time:.2f}s")
     
     # save predictions as .npy format
     pred_save_path = RES_PATH['predictions'][tsfm_method]
-    pred_file_name = f"{tsfm_method}_{data_name}_cl{cl}_hl{hl}_preds.npy"
+    pred_file_name = f"{tsfm_method}_{data_name}_cl[{cl}]_hl[{hl}]_preds.npy"
     pred_npy_save_path  = pred_save_path + pred_file_name
 
     np.save(pred_npy_save_path, base_preds)
     print(f"✅ Predictions saved to: {pred_npy_save_path}")    
 
-    # calcualte performance metrics
+    # calculate performance metrics
     mae, mse, wape, smape = calculate_metrics(base_actuals, base_preds)
     mae_scl, mse_scl, wape_scl, smape_scl = calculate_metrics(base_actuals_scl, base_preds_scl)
 
@@ -104,12 +106,11 @@ def run_timesfm_experiment(data_name, tsfm_method, tr_data, te_data, cl, hl, pat
 def run_lora_experiment(data_name, tsfm_method, ft_method, tr_data, te_data, cl, hl, patch_size, 
                         rank, alpha, dropout, target_modules, batch_size, lr, epochs):
     
-    # data scaling
-    scaler = TimeSeriesScaler()
-    tr_data_scl = scaler.fit_transform(tr_data)
-    te_data_scl = scaler.transform(te_data)
-    print(f"Data Statistics: Mean={scaler.mean:.4f}, Std={scaler.std:.4f}")
-    print(f"Tr scaled: Mean={tr_data_scl.mean():.4f}, Std={tr_data_scl.std():.4f} | Te scaled: Mean={te_data_scl.mean():.4f}, Std={te_data_scl.std():.4f}")
+    # [수정] 평가용 글로벌 스케일러 세팅
+    eval_scaler = TimeSeriesScaler()
+    _ = eval_scaler.fit_transform(tr_data)
+    
+    print(f"Global Scaling info for evaluation: Mean={eval_scaler.mean:.4f}, Std={eval_scaler.std:.4f}")
 
     # set tsfm model
     model_ver = PARAMS[tsfm_method]['version']
@@ -120,7 +121,7 @@ def run_lora_experiment(data_name, tsfm_method, ft_method, tr_data, te_data, cl,
         max_context=cl, 
         max_horizon=hl, 
         use_continuous_quantile_head=True, 
-        normalize_inputs=False # 위에 data scaling을 수행하고 여러 기법들 간 공정한 성능 비교를 위해 False로 세팅
+        normalize_inputs=True # [수정] 모델 내부 정규화(Instance Norm) 활성화
     )
 
     # apply LoRA to TimesFM
@@ -134,12 +135,12 @@ def run_lora_experiment(data_name, tsfm_method, ft_method, tr_data, te_data, cl,
     )
     tsfm.model.to(DEVICE)
 
-    # set dataloader
-    train_dataset = TimeSeriesDataset(tr_data_scl, cl=cl, hl=hl, patch_size=patch_size)
+    # [수정] 원본 데이터를 데이터로더에 넣음 (정규화는 train 루프에서 배치 단위로 처리)
+    train_dataset = TimeSeriesDataset(tr_data, cl=cl, hl=hl, patch_size=patch_size)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
     # train model
-    print(f"\n Training for {epochs} epochs...")
+    print(f"\n🚀 Training for {epochs} epochs...")
     train_start_time = time.time()
     
     tsfm_lora, history = train(
@@ -160,30 +161,29 @@ def run_lora_experiment(data_name, tsfm_method, ft_method, tr_data, te_data, cl,
     print(f"Average Time per Epoch: {avg_epoch_time:.2f}s")
     print("="*50)
 
-    # 6. 추론 및 역정규화 (Inverse Transform)
+    # 6. 추론
     tsfm_lora.compile(tsfm_config)
     print("Predicting with TimesFM + LoRA...")
     start_inf_time = time.time()
     
     with torch.no_grad():
-        # 정규화된 컨텍스트로 예측 수행
-        lora_preds_scl, lora_actuals_scl = forecast(
+        # [수정] 원본 데이터를 넣고, 원본 스케일의 예측값을 받음
+        lora_preds, lora_actuals = forecast(
             model_obj=tsfm_lora, 
-            data=te_data_scl, 
+            data=te_data, 
             cl=cl, hl=hl, 
             patch_size=patch_size
         )
 
-    # reverse scaling to get predictions and actuals in original scale
-    lora_preds   = scaler.inverse_transform(lora_preds_scl)
-    lora_actuals = scaler.inverse_transform(lora_actuals_scl)
+    # [수정] 평가를 위해 글로벌 스케일러로 변환
+    lora_preds_scl = eval_scaler.transform(lora_preds)
+    lora_actuals_scl = eval_scaler.transform(lora_actuals)
 
     print(f"# of predictions: {len(lora_preds)}, # of actuals: {len(lora_actuals)}")
     print(f"Predictions: {lora_preds[:5]}, # actuals: {lora_actuals[:5]}")
     print(f'Scaled predictions: {lora_preds_scl[:5]}, Scaled actuals: {lora_actuals_scl[:5]}')    
 
     inf_time = time.time() - start_inf_time
-
     print(f"TimesFM + LoRA Inference Time: {inf_time:.2f}s")
 
     # 7. 성능 지표 계산 및 저장
@@ -191,7 +191,13 @@ def run_lora_experiment(data_name, tsfm_method, ft_method, tr_data, te_data, cl,
     mae_scl, mse_scl, wape_scl, smape_scl = calculate_metrics(lora_actuals_scl, lora_preds_scl)
 
     pred_save_path = RES_PATH['predictions'][ft_method]
-    pred_file_name = f"{tsfm_method}_{data_name}_cl{cl}_hl{hl}_{ft_method}_r{rank}_a{alpha}_d{dropout}_tgt{target_modules}_lr{lr}_e{epochs}_bs{batch_size}_preds.npy"
+    
+    # [수정] 파일명에서 특수문자를 제거하기 위해 join 사용
+    # 리스트 요소를 쉼표로 연결하고 대괄호로 묶음 (따옴표 제거)
+    tgt_name = ", ".join(target_modules)
+    #tgt_name = f"[{inner_str}]"
+    
+    pred_file_name = f"{tsfm_method}_{data_name}_cl[{cl}]_hl[{hl}]_{ft_method}_r[{rank}]_a[{alpha}]_d[{dropout}]_tgt_[{tgt_name}]_lr[{lr}]_e[{epochs}]_bs[{batch_size}]_preds.npy"
     pred_npy_save_path = os.path.join(pred_save_path, pred_file_name)
 
     np.save(pred_npy_save_path, lora_preds)
@@ -290,17 +296,14 @@ if __name__ == "__main__":
             df_raw  = pd.read_csv(df_path)
 
             # set target data and split fine tuning / test set
-            # target = df_raw[tgt_col].values.astype(np.float32)
             target = df_raw[tgt_col].fillna(0).values.astype(np.float32)
             ft_len = int(len(target) * fr_item)
 
             tr_data = target[:ft_len] 
-            te_data = target[ft_len - cl_item:] # context 길이만큼 겹치도록 설정하여 모델이 test set의 초기 부분을 보고 예측을 시작할 수 있도록 함
+            te_data = target[ft_len - cl_item:] 
 
             run_timesfm_experiment(data_name=dn_item, tsfm_method=tm_item, 
                                    tr_data=tr_data, te_data=te_data, cl=cl_item, hl=hl_item, patch_size=ps_item)
-        # end for
-    # end if
         
     if PIPELINE['LoRA']:
         for idx, (dn_item, tm_item, ft_item, ps_item, fr_item, cl_item, hl_item, rank_item, alpha_item, dropout_item, target_modules_item, batch_size_item, lr_item, epochs_item) in enumerate(lora_comb, 1):
@@ -319,11 +322,9 @@ if __name__ == "__main__":
             ft_len = int(len(target) * fr_item)
 
             tr_data = target[:ft_len] 
-            te_data = target[ft_len - cl_item:] # context 길이만큼 겹치도록 설정하여 모델이 test set의 초기 부분을 보고 예측을 시작할 수 있도록 함
+            te_data = target[ft_len - cl_item:] 
 
             run_lora_experiment(data_name=dn_item, tsfm_method=tm_item, ft_method=ft_item, 
                                 tr_data=tr_data, te_data=te_data, cl=cl_item, hl=hl_item, patch_size=ps_item, 
                                 rank=rank_item, alpha=alpha_item, dropout=dropout_item, target_modules=target_modules_item, 
                                 batch_size=batch_size_item, lr=lr_item, epochs=epochs_item)
-        # end for
-    # end if

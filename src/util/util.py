@@ -73,14 +73,20 @@ def forecast(model_obj, data, cl, hl, patch_size):
         
         if is_lora:
             if i == cl: print(f"🔍 [Mode] Manual inference (LoRA-tuned)")
+            
+            # [추가] Instance Normalization (로컬 스케일링)
+            ctx_mean = np.mean(ctx_raw)
+            ctx_std = np.std(ctx_raw) + 1e-8
+            ctx_norm = (ctx_raw - ctx_mean) / ctx_std
+            
             ctx_padded = np.zeros(target_cl, dtype=np.float32)
-            ctx_padded[-len(ctx_raw):] = ctx_raw
+            ctx_padded[-len(ctx_norm):] = ctx_norm
             
             num_patches = target_cl // p_size
             inputs_ts = torch.tensor(ctx_padded).view(1, num_patches, p_size).to(DEVICE)
             
             mask_np = np.zeros(target_cl, dtype=np.float32)
-            mask_np[:target_cl - len(ctx_raw)] = 1
+            mask_np[:target_cl - len(ctx_norm)] = 1
             masks_ts = torch.tensor(mask_np).view(1, num_patches, p_size).to(DEVICE)
             
             with torch.no_grad():
@@ -93,8 +99,10 @@ def forecast(model_obj, data, cl, hl, patch_size):
                 else:  # 3차원일 경우
                     all_preds = outputs[0].reshape(-1)
                     
-                # [수정] 슬라이싱 버그 해결
-                pred_values = all_preds[-hl:][:rem_len].cpu().numpy()
+                pred_scl = all_preds[-hl:][:rem_len].cpu().numpy()
+                
+                # [추가] 역정규화하여 원본 스케일 복구
+                pred_values = (pred_scl * ctx_std) + ctx_mean
         else:
             if i == cl: print(f"🔍 [Mode] Standard TimesFM")
             f_out, _ = model_obj.forecast(inputs=[ctx_raw], horizon=rem_len)

@@ -94,9 +94,17 @@ def train(model, train_loader, max_horizon, patch_size, lr, epochs):
         for batch_x, batch_y, batch_mask in train_loader:
             batch_x, batch_y, batch_mask = batch_x.to(DEVICE), batch_y.to(DEVICE), batch_mask.to(DEVICE)
             optimizer.zero_grad()
+
+            # [추가] 배치 단위 내부 정규화 (Instance Normalization)
+            batch_mean = batch_x.mean(dim=1, keepdim=True)
+            batch_std = batch_x.std(dim=1, keepdim=True) + 1e-8
             
-            num_patches = batch_x.shape[1] // p_size
-            inputs_ts = batch_x.view(batch_x.shape[0], num_patches, p_size)
+            # 입력값과 정답 모두 로컬 정규화 스케일로 변환
+            batch_x_norm = (batch_x - batch_mean) / batch_std
+            batch_y_norm = (batch_y - batch_mean) / batch_std
+            
+            num_patches = batch_x_norm.shape[1] // p_size
+            inputs_ts = batch_x_norm.view(batch_x_norm.shape[0], num_patches, p_size)
             masks_ts = batch_mask.view(batch_mask.shape[0], num_patches, p_size)
 
             with torch.enable_grad():
@@ -137,12 +145,13 @@ def train(model, train_loader, max_horizon, patch_size, lr, epochs):
                 
                 # 4. Loss 계산을 위한 형태 맞추기
                 if outputs.dim() == 4:
-                    pred_all = outputs[:, :, :, 0].reshape(batch_x.shape[0], -1)
+                    pred_all = outputs[:, :, :, 0].reshape(batch_x_norm.shape[0], -1)
                 else:
-                    pred_all = outputs.reshape(batch_x.shape[0], -1)
+                    pred_all = outputs.reshape(batch_x_norm.shape[0], -1)
 
-                target_len = min(pred_all.shape[1], batch_y.shape[1])
-                loss = criterion(pred_all[:, -target_len:], batch_y[:, :target_len])
+                target_len = min(pred_all.shape[1], batch_y_norm.shape[1])
+                # [수정] Loss 계산 시 스케일링 된 타겟 사용
+                loss = criterion(pred_all[:, -target_len:], batch_y_norm[:, :target_len])
 
             loss.backward()
             optimizer.step()

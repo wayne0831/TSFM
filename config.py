@@ -13,7 +13,7 @@ import torch
 ###########################################################################################################
 
 DEVICE      = 'cuda' if torch.cuda.is_available() else 'cpu'
-DATA        = 'Etth1' # 'Etth1, Etth2, Ettm1, Ettm2, Electricity, Exchange, Solar, Weather'
+DATA        = 'Etth1, Etth2, Ettm1, Ettm2, Electricity, Exchange, Solar, Weather'
 TSFM_METHOD = 'TimesFM'
 FT_METHOD   = 'LoRA'
 
@@ -25,9 +25,9 @@ FT_METHOD   = 'LoRA'
 PARAMS = {
     'TimesFM': {
         'version': 'google/timesfm-2.5-200m-pytorch',
-        'patch_size': '32', # ver. 1.0: 64 / ver. 2.5: 32 /
-        'cl': '96',    # context length
-        'hl': '96' # '96, 192, 336, 720',   # horizon length
+        'patch_size': '32',          # ver. 1.0: 64 / ver. 2.5: 32 /
+        'cl': '96',                  # context length
+        'hl': '96, 192, 336, 720',   # horizon length
     },
     'FT_RATIO': '0.7',
     'LoRA': {
@@ -36,7 +36,7 @@ PARAMS = {
         'dropout': '0.1',
         'target_modules': '[["qkv_proj", "out"]]', # '[["qkv_proj", "out"], ["ff0", "ff1"], ["qkv_proj", "out", "ff0", "ff1"]]',
         'lr': '1e-4',
-        'epochs': '1',  # '10',
+        'epochs': '10',
         'batch_size': '16',
     }
 }
@@ -90,7 +90,7 @@ DATASET = {
 }
 
 PIPELINE = {
-    'TimesFM':  False,
+    'TimesFM':  True,
     'LoRA':     True,
 }
 
