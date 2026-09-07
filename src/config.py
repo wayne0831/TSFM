@@ -12,10 +12,12 @@ import torch
 # set version configurations
 ###########################################################################################################
 
+DATE        = 260905
 DEVICE      = 'cuda' if torch.cuda.is_available() else 'cpu'
 DATA        = 'Etth1, Etth2, Ettm1, Ettm2, Electricity, Exchange, Solar, Weather'
 TSFM_METHOD = 'TimesFM'
 FT_METHOD   = 'LoRA'
+DATA_GEN_METHOD = 'KernelSynth'
 
 ###########################################################################################################
 # set hyperparmeters configurations
@@ -23,6 +25,10 @@ FT_METHOD   = 'LoRA'
 
 # name: TimesFM_cl[96]_hl[192]_LoRA_fr[0.7],r[4]_a[16]_d[0.1]_tgt[qkv_proj_out_ff0_ff1]_e[5]_bs[32]
 PARAMS = {
+    'KernelSynth': {
+        'NUM_SAMPLES': 5000,
+        'LENGTH': 512,
+    },
     'TimesFM': {
         'version': 'google/timesfm-2.5-200m-pytorch',
         'patch_size': '32',          # ver. 1.0: 64 / ver. 2.5: 32 /
@@ -63,6 +69,12 @@ RES_PATH  = {
     'plot': { # .png
         'TimesFM': f'./results/plot/TimesFM/',
         'LoRA': f'./results/plot/LoRA/',
+    },
+    'data_generation': { # .csv, .npy
+        'KernelSynth': {
+            'METADATA': f'./results/data_generation/{DATE}_KernelSynth_Num{PARAMS["KernelSynth"]["NUM_SAMPLES"]}_Len{PARAMS["KernelSynth"]["LENGTH"]}.csv',
+            'DATA': f'./results/data_generation/{DATE}_KernelSynth_Num{PARAMS["KernelSynth"]["NUM_SAMPLES"]}_Len{PARAMS["KernelSynth"]["LENGTH"]}.npy',
+        }
     },
     'predictions': { # .npy
         'TimesFM': f'./results/predictions/TimesFM/',

@@ -284,7 +284,7 @@ if __name__ == "__main__":
 
     samples_data = []      # 생성된 시계열 수치 배열을 저장할 리스트
     metadata_records = []  # 커널 조합 메타데이터를 저장할 리스트
-    num_samples = 49       # 8x8 그리드 생성을 위한 총 샘플 수
+    num_samples = 36       # 6x6 그리드 생성을 위한 총 샘플 수
 
     # 64회 반복하며 가상 시계열 및 메타데이터 추출
     for i in range(1, num_samples + 1):
@@ -306,16 +306,20 @@ if __name__ == "__main__":
     # (2) 5x5 서브플롯 그리드 생성 및 Title에 커널 조합 수식 매핑
     # -----------------------------------------------------------------
     # 가로 20인치, 세로 12인치의 여유 있는 캔버스 생성 (X축 공유)
-    fig, axes = plt.subplots(7, 7, figsize=(20, 12), sharex=True)
-    axes = axes.flatten()  # 2차원 축 배열(5, 5)을 1차원(25,)으로 펼쳐 인덱싱 편의성 확보
+    fig, axes = plt.subplots(6, 6, figsize=(20, 12), sharex=True)
+    axes = axes.flatten()  # 2차원 축 배열(6, 6)을 1차원(36,)으로 펼쳐 인덱싱 편의성 확보
 
     for idx in range(num_samples):
         ax = axes[idx]
         ts = samples_data[idx]
+
+        # Min-Max 스케일링 (분해 안정성 확보)
+        ts_scaled = (ts - np.min(ts)) / (np.max(ts) - np.min(ts) + 1e-9)
+
         expr = metadata_records[idx]["Kernel_Expression"]
 
         # 시계열 라인 플롯 렌더링
-        ax.plot(ts, color="tab:blue", lw=1.1)
+        ax.plot(ts_scaled, color="tab:blue", lw=1.1)
 
         # 서브플롯 타이틀에 샘플 번호와 축약된 커널 조합 수식을 함께 명시
         # 폭이 좁은 5x5 환경에서 텍스트 겹침을 방지하기 위해 폰트 크기 7.5pt 지정

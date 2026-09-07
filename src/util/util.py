@@ -5,6 +5,7 @@ from statsmodels.tsa.seasonal import STL
 from PyEMD import EMD
 from typing import List, Dict, Any, Tuple
 import warnings
+import os
 warnings.filterwarnings('ignore')
 
 # =====================================================================
@@ -46,6 +47,7 @@ def calculate_time_series_strength(series: np.ndarray):
     1. 고전적 STL 분해: y = T + S + R_stl -> F_T_STL, F_S_STL 산출
     2. STL-EMD 하이브리드 분해: y = T + S + I + R_pure -> F_T_STL_EMD, F_S_STL_EMD, F_I_STL_EMD 산출
     """
+
     estimated_p = estimate_period_fft(series)
     
     # 주기가 데이터 길이의 절반을 넘지 않도록 조정
@@ -172,16 +174,46 @@ def build_kernel_bank() -> List[Kernel]:
 # =====================================================================
 # 4. 사전 규칙 기반 정답 라벨링 (Rule-based Sector Mapping)
 # =====================================================================
-def assign_sector_label(kernels_used: List[str]) -> Tuple[str, str]:
-    """커널 구성 요소에 따라 S1~S4 정답(Ground Truth) 섹터를 추론합니다."""
-    has_per = any("Periodic" in k for k in kernels_used)
-    has_lin = any("Linear" in k for k in kernels_used)
+# def assign_sector_label(kernels_used: List[str]) -> Tuple[str, str]:
+#     """커널 구성 요소에 따라 S1~S4 정답(Ground Truth) 섹터를 추론합니다."""
+#     has_per = any("Periodic" in k for k in kernels_used)
+#     has_lin = any("Linear" in k for k in kernels_used)
     
-    if has_per and has_lin:
+#     if has_per and has_lin:
+#         return "S1", "Composite"
+#     elif has_per and not has_lin:
+#         return "S2", "Seasonal"
+#     elif not has_per and has_lin:
+#         return "S4", "Trending"
+#     else:
+#         return "S3", "Stationary"
+
+def assign_sector_label(kernels_used: List[str], kernel_expr: str, length: int = 512) -> Tuple[str, str]:
+    """
+    단순 커널 명칭 포함 여부를 넘어, 
+    유효 주기성 발현 여부(p <= length // 2)와 Linear/장기 RBF의 비중을 함께 고려
+    """
+    # 주기 커널이 포함되어 있는지 + 주기가 데이터 길이 안에서 최소 2주기 이상 순환하는지 검증
+    has_valid_per = False
+    for k in kernels_used:
+        if "Periodic" in k:
+            # Per(p=값) 추출
+            import re
+            match = re.search(r"Per\(p=(\d+)\)", kernel_expr)
+            if match:
+                p_val = int(match.group(1))
+                if p_val <= (length // 2):  # 최소 2주기 이상 관측 가능해야 계절성 인정
+                    has_valid_per = True
+            else:
+                has_valid_per = True
+                
+    has_lin = any("Linear" in k for k in kernels_used) or any("RBF(l=10)" in k for k in kernels_used)
+    
+    if has_valid_per and has_lin:
         return "S1", "Composite"
-    elif has_per and not has_lin:
+    elif has_valid_per and not has_lin:
         return "S2", "Seasonal"
-    elif not has_per and has_lin:
+    elif not has_valid_per and has_lin:
         return "S4", "Trending"
     else:
         return "S3", "Stationary"
@@ -207,6 +239,7 @@ def kernel_synth_generate(kernel_bank, max_kernels=5, length=512, jitter=1e-5):
     t = np.linspace(0, length - 1, length)
     cov_matrix = composed_kernel(t, t) + np.eye(length) * jitter
     synthetic_series = np.random.multivariate_normal(np.zeros(length), cov_matrix)
+
     
     sector, pattern = assign_sector_label(kernels_used)
     
@@ -226,7 +259,8 @@ def kernel_synth_generate(kernel_bank, max_kernels=5, length=512, jitter=1e-5):
 if __name__ == "__main__":
     np.random.seed(42)
     bank = build_kernel_bank()
-    
+
+    DATE        = 260903
     NUM_SAMPLES = 5000
     LENGTH      = 512
     records = []
@@ -239,6 +273,8 @@ if __name__ == "__main__":
         
         # Min-Max 스케일링 (분해 안정성 확보)
         ts_scaled = (ts - np.min(ts)) / (np.max(ts) - np.min(ts) + 1e-9)
+
+        #print(f"Sample min: {ts_scaled.min():.4f}, max: {ts_scaled.max():.4f}")
         
         # 2. STL-EMD 강도 추출
         ft_stl, fs_stl, fr_stl, ft_emd, fs_emd, fi_emd = calculate_time_series_strength(ts_scaled)
@@ -274,5 +310,8 @@ if __name__ == "__main__":
     ]
     df_results = df_results[columns_order]
 
+    print(os.getcwd())
+    df_results.to_csv(f'./results/temp/0902_KernelSynth_Num{NUM_SAMPLES}_Len{LENGTH}.csv', index=False)
+
     print("\n✅ 최종 결과 데이터프레임 (상위 5개):")
-    display(df_results.head())
+    print(df_results.head())
